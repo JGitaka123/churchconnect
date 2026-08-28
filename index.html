@@ -1,0 +1,1630 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Church Connect - Ministry Console</title>
+    
+    <!-- PWA configuration and mobile styling -->
+    <link rel="manifest" href="manifest.json?v=5">
+    <link rel="icon" href="icons/favicon-32.png?v=5" type="image/png">
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0b1220">
+    <script>
+        // Register the service worker so the app can be installed on phones
+        // and work offline. Safe no-op in browsers without SW support.
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('sw.js').catch(function () {});
+            });
+        }
+    </script>
+    
+    <!-- Fonts and Styling links -->
+    <link rel="stylesheet" href="styles.css?v=21">
+    
+    <!-- Chart.js (vendored locally so analytics render offline, no CDN dependency) -->
+    <script src="vendor/chart.umd.js?v=5" defer></script>
+</head>
+<body>
+
+    <!-- Authentication gate (login + MFA). Populated and toggled by app.js. -->
+    <div id="auth-screen" class="auth-screen" style="display:none;"></div>
+
+    <div class="app-container" id="app-container" style="display:none;">
+        <!-- 1. Side Navigation Menu -->
+        <aside class="sidebar">
+            <div class="brand-section">
+                <div class="brand-logo"><img src="icons/logo-emblem-128.png?v=5" alt="Maximum Miracle Centre logo"></div>
+                <div class="brand-text">
+                    <div class="brand-name">Church <span class="brand-accent">CONNECT</span></div>
+                    <div class="brand-sub">Ministry Console</div>
+                </div>
+            </div>
+
+            <div class="sidebar-search">
+                <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+                <input type="search" id="nav-search-input" class="sidebar-search-input" placeholder="Search groups, events..." aria-label="Search">
+            </div>
+
+            <nav class="nav-menu" aria-label="Primary">
+              <div class="nav-group">
+                <div class="nav-section-label">Overview</div>
+                <ul class="nav-list">
+                  <li><a href="#" class="nav-link active" data-tab="admin_dashboard"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.6"/><rect x="14" y="3" width="7" height="5" rx="1.6"/><rect x="14" y="12" width="7" height="9" rx="1.6"/><rect x="3" y="16" width="7" height="5" rx="1.6"/></svg> Dashboard</a></li>
+                  <li><a href="#" class="nav-link" data-tab="admin_directory"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.4 20c0-3.3 2.5-5.3 5.6-5.3s5.6 2 5.6 5.3"/><path d="M16.2 5.3a3.2 3.2 0 0 1 0 6.1"/><path d="M17.3 15c2.3.5 4.1 2.3 4.1 5"/></svg> Member Database</a></li>
+                </ul>
+              </div>
+              <div class="nav-group">
+                <div class="nav-section-label">Ministry</div>
+                <ul class="nav-list">
+                  <li><a href="#" class="nav-link" data-tab="admin_staff"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a4 4 0 1 0-4-4M12 11a4 4 0 1 0-4-4M5.2 21c0-3.2 3-5 6.8-5s6.8 1.8 6.8 5"/></svg> Staff</a></li>
+                  <li><a href="#" class="nav-link" data-tab="admin_ministry"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.4"/><path d="M3.5 9.5h17M8 3.4v3.2M16 3.4v3.2"/></svg> Teams &amp; Rotas</a></li>
+                  <li><a href="#" class="nav-link" data-tab="admin_groups"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8.2" cy="9" r="3"/><circle cx="16.6" cy="10" r="2.3"/><path d="M2.6 19c0-3 2.4-4.9 5.6-4.9 1.6 0 3 .5 4 1.3"/><path d="M14.6 14.7c2.6.2 4.8 1.9 4.8 4.6"/></svg> Groups</a></li>
+                </ul>
+              </div>
+              <div class="nav-group">
+                <div class="nav-section-label">Care &amp; Prayer</div>
+                <ul class="nav-list">
+                  <li><a href="#" class="nav-link" data-tab="admin_followups"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.6 8.4l-2.1 5.1-5.1 2.1 2.1-5.1z"/></svg> Follow-Ups</a></li>
+                </ul>
+              </div>
+              <div class="nav-group">
+                <div class="nav-section-label">Finance</div>
+                <ul class="nav-list">
+                  <li><a href="#" class="nav-link" data-tab="admin_financials"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.8" y="6" width="18.4" height="12.5" rx="2.4"/><path d="M2.8 10.2h18.4"/><circle cx="16.6" cy="14.3" r="1.35"/></svg> Pledges &amp; Giving</a></li>
+                </ul>
+              </div>
+              <div class="nav-group">
+                <div class="nav-section-label">Communication</div>
+                <ul class="nav-list">
+                  <li><a href="#" class="nav-link" data-tab="admin_communications"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A2.6 2.6 0 0 1 17.9 17H8.4l-4.4 3.2V6.6A2.6 2.6 0 0 1 6.6 4h11.3a2.6 2.6 0 0 1 2.6 2.6z"/></svg> Announcements</a></li>
+                </ul>
+              </div>
+              <div class="nav-group">
+                <div class="nav-section-label">Administration</div>
+                <ul class="nav-list">
+                  <li><a href="#" class="nav-link" data-tab="admin_settings"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg> Settings</a></li>
+                  <li><a href="#" class="nav-link" data-tab="mobile_preview"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.8" width="10" height="18.4" rx="2.6"/><path d="M10.6 18.4h2.8"/></svg> Mobile App</a></li>
+                </ul>
+              </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="profile-chip">
+                    <div class="profile-avatar" id="sidebar-profile-avatar">SA</div>
+                    <div class="profile-info">
+                        <div class="profile-name" id="sidebar-profile-name">Super Admin</div>
+                        <div class="profile-status"><span class="status-dot"></span> Online</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 2. Main Workspace -->
+        <main class="main-workspace">
+            
+            <!-- Global header dashboard bar -->
+            <header class="global-header">
+                <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Open menu" aria-expanded="false" title="Menu"><svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+                <div style="display:flex; flex-direction:column; min-width:0;">
+                    <h2 id="active-branch-indicator" style="font-family: var(--font-header); font-weight:700; font-size:1.2rem; color:var(--text-primary);">Nairobi CBD</h2>
+                    <span style="font-size:0.75rem; color:var(--text-secondary);">Currently Administered Branch</span>
+                </div>
+                
+                <div class="control-group">
+                    <div style="text-align: right; display:flex; flex-direction:column;">
+                        <span style="font-size:0.7rem; color:var(--text-secondary); text-transform:uppercase; font-weight:bold;">Simulated Role</span>
+                        <select id="role-simulator-select" class="select-custom">
+                            <option value="hq_admin">Super Admin (HQ)</option>
+                            <option value="branch_admin">Branch Admin</option>
+                            <option value="ministry_leader">Ministry Leader</option>
+                            <option value="member">Church Member (Mobile View)</option>
+                        </select>
+                    </div>
+
+                    <div style="text-align: right; display:flex; flex-direction:column;">
+                        <span style="font-size:0.7rem; color:var(--text-secondary); text-transform:uppercase; font-weight:bold;">Branch Target</span>
+                        <select id="global-branch-select" data-campus-select class="select-custom">
+                            <option value="global">All Branches (Global)</option>
+                        </select>
+                    </div>
+
+                    <div style="text-align: right; display:flex; flex-direction:column;">
+                        <span style="font-size:0.7rem; color:var(--text-secondary); text-transform:uppercase; font-weight:bold;">Interface Theme</span>
+                        <select id="interface-theme-select" class="select-custom">
+                            <option value="dark">Sanctuary Dark</option>
+                            <option value="light">Daylight</option>
+                            <option value="midnight">Midnight Navy</option>
+                        </select>
+                    </div>
+                    
+                    <span class="simulator-badge" id="active-role-indicator">HQ SUPER ADMIN</span>
+                    <button id="logout-btn" class="logout-btn" aria-label="Sign out" title="Sign out"><svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v8"/><path d="M7.5 7A7 7 0 1 0 16.5 7"/></svg></button>
+                </div>
+            </header>
+
+            <!-- 3. VIEW PANEL: ADMIN DASHBOARD -->
+            <section id="admin_dashboard" class="view-panel" style="display: block;">
+
+                <!-- Greeting hero -->
+                <div class="dash-hero">
+                    <div class="dash-hero-text">
+                        <h2 class="dash-greeting" id="dash-greeting">Good morning, Super Admin!</h2>
+                        <p class="dash-subtitle" id="dash-subtitle">Here&#39;s what&#39;s happening across all branches today.</p>
+                    </div>
+                </div>
+
+                <!-- 3 Stat cards -->
+                <div class="grid-cards-4">
+                    <div class="card-glass stats-card">
+                        <div class="stats-info">
+                            <h4>This Week Giving</h4>
+                            <div class="value" id="dash-giving-total">Ksh 0</div>
+                            <div class="stat-delta-row"><span class="changeup stat-delta" id="dash-giving-change">+5.2%</span><span class="stat-caption">vs last week</span></div>
+                        </div>
+                        <div class="stats-icon tone-green"><svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.6" y="6" width="18.8" height="12" rx="2.2"/><circle cx="12" cy="12" r="2.7"/><path d="M6.2 9.2v5.6M17.8 9.2v5.6"/></svg></div>
+                    </div>
+                    <div class="card-glass stats-card">
+                        <div class="stats-info">
+                            <h4>Active Members</h4>
+                            <div class="value" id="dash-members-total">-</div>
+                            <div class="stat-delta-row"><span class="stat-caption" id="dash-members-scope">Across all branches</span></div>
+                        </div>
+                        <div class="stats-icon tone-blue"><svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V10l8-5.6 8 5.6v11"/><path d="M9.4 21v-5.2h5.2V21"/><path d="M12 2.4v3.2M10.4 4h3.2"/></svg></div>
+                    </div>
+                    <div class="card-glass stats-card">
+                        <div class="stats-info">
+                            <h4>New Members (30 Days)</h4>
+                            <div class="value" id="dash-newmembers-total">-</div>
+                            <div class="stat-delta-row"><span class="changeup stat-delta" id="dash-newmembers-change">new</span><span class="stat-caption">this month</span></div>
+                        </div>
+                        <div class="stats-icon tone-pink"><svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.5-8.6C.8 9.4 2.6 6 5.8 6c2 0 3.3 1.1 4.2 2.5h4C14.9 7.1 16.2 6 18.2 6c3.2 0 5 3.4 3.3 6.4C19.5 16.4 12 21 12 21z"/></svg></div>
+                    </div>
+                </div>
+
+                <!-- Yearly contribution trend + Overall health -->
+                <div class="grid-dashboard" style="align-items: stretch;">
+                    <div class="card-glass chart-panel giving-trend-panel">
+                        <h3 class="card-title">Yearly Contribution Trend</h3>
+                        <div class="chart-container-wrapper">
+                            <canvas id="giving-trend-chart" role="img" aria-label="Yearly contribution trend"></canvas>
+                        </div>
+                    </div>
+                    <div class="card-glass health-card">
+                        <h3 class="card-title">Overall Health</h3>
+                        <div class="health-ring" id="dash-health-ring" style="--health-pct: 78;">
+                            <span class="health-pct" id="dash-health-pct">78%</span>
+                        </div>
+                        <div class="health-label" id="dash-health-label">Great, keep it up!</div>
+                        <div class="health-meta" id="dash-health-meta">Computed from giving &amp; care data.</div>
+                    </div>
+                </div>
+
+                <!-- AI executive snapshot briefing card -->
+                <div class="card-glass ai-snapshot-card" id="ai-snapshot-content" style="margin-top:22px;">
+                    <!-- AI compilation goes here -->
+                </div>
+
+                <!-- Quick actions -->
+                <div class="card-glass quick-actions-card" style="margin-top:22px;">
+                    <h3 class="card-title">Quick Actions</h3>
+                    <div class="quick-actions">
+                        <button type="button" class="quick-action" data-goto="admin_financials"><svg class="qa-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.8" y="6" width="18.4" height="12.5" rx="2.4"/><path d="M2.8 10.2h18.4"/><circle cx="16.6" cy="14.3" r="1.35"/></svg> Pledges</button>
+                        <button type="button" class="quick-action" data-goto="admin_communications"><svg class="qa-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A2.6 2.6 0 0 1 17.9 17H8.4l-4.4 3.2V6.6A2.6 2.6 0 0 1 6.6 4h11.3a2.6 2.6 0 0 1 2.6 2.6z"/></svg> Announcements</button>
+                        <button type="button" class="quick-action" data-goto="admin_communications"><svg class="qa-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg> Messages</button>
+                        <button type="button" class="quick-action" data-goto="admin_settings"><svg class="qa-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V10l8-5.6 8 5.6v11"/><path d="M9.4 21v-5.2h5.2V21"/></svg> Branches</button>
+                        <button type="button" class="quick-action" data-goto="admin_settings"><svg class="qa-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg> Settings</button>
+                    </div>
+                </div>
+
+                <!-- Insights grid -->
+                <div class="grid-dashboard" style="margin-top:22px;">
+                    <div class="card-glass">
+                        <h3 class="card-title">Giving Breakdown</h3>
+                        <div id="dash-giving-breakdown" class="breakdown-list"></div>
+                    </div>
+                    <div class="card-glass">
+                        <h3 class="card-title">Branch Overview</h3>
+                        <div id="dash-branch-overview" class="branch-overview"></div>
+                    </div>
+                    <div class="card-glass">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <h3 class="card-title" style="margin-bottom:0;">Upcoming Events</h3>
+                            <button type="button" class="btn btn-primary-gradient btn-sm" onclick="ChurchApp.toggleAddEventForm()">+ Add Event</button>
+                        </div>
+                        <div id="dash-add-event-form" style="display:none; margin-top:10px;"></div>
+                        <ul id="dash-upcoming-events" class="upcoming-events" style="margin-top:10px;"></ul>
+                    </div>
+                    <div class="card-glass care-card">
+                        <h3 class="card-title">Care &amp; Prayer</h3>
+                        <div id="dash-care-alert" class="care-alert"></div>
+                        <ul id="dash-prayer-requests" class="prayer-list"></ul>
+                        <button type="button" class="btn btn-primary-gradient btn-sm" data-goto="admin_followups" style="margin-top:12px;">View F/U Report</button>
+                    </div>
+                </div>
+
+                <!-- Verse banner -->
+                <div class="verse-banner">
+                <!-- Member-suggested announcements pending admin approval -->
+                <div class="card-glass suggested-ann-dash" id="dash-suggested-card" style="margin-top:22px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px;">
+                        <h3 class="card-title" style="margin-bottom:0;">Suggested Announcements <span class="status-pill status-pending" id="dash-suggested-count">0</span></h3>
+                        <button type="button" class="btn btn-secondary btn-sm" data-goto="admin_communications">Open Communications</button>
+                    </div>
+                    <div id="dash-suggested-list" class="suggested-ann-log"></div>
+                </div>
+
+                    <svg class="verse-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c-2.8-1.9-6.6-2-9-1v14.5c2.4-1 6.2-.9 9 1 2.8-1.9 6.6-2 9-1V4c-2.4-1-6.2-.9-9 1z"/><path d="M12 5v14.5"/></svg>
+                    <div class="verse-text-wrap">
+                        <p class="verse-text">&ldquo;Go and make disciples of all nations.&rdquo;</p>
+                        <span class="verse-ref">&mdash; Matthew 28:19</span>
+                    </div>
+                </div>
+
+                <div class="card-glass" style="margin-top:22px;">
+                    <h3 class="card-title" style="margin-bottom:15px;">Fund Distribution Summary</h3>
+                    <div class="chart-container-wrapper" style="height: 180px;">
+                        <canvas id="category-pie-chart" role="img" aria-label="Fund distribution breakdown by category"></canvas>
+                    </div>
+                </div>
+
+                <!-- Projects & fundraising campaigns (admin posting + live progress) -->
+                <div class="card-glass" style="margin-top:22px;" id="dashboard-projects-section">
+                    <div class="giving-insights-head">
+                        <div>
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem;">Projects &amp; Fundraising</h3>
+                            <span style="font-size:0.75rem; color:var(--text-secondary);">Post a project with its required amount - members see it live in the app under Projects.</span>
+                        </div>
+                        <button type="button" id="dash-new-project-btn" class="btn btn-secondary btn-sm">+ New Project</button>
+                    </div>
+                    <form id="dash-add-campaign-form" class="campaign-form-card" style="display:none; flex-direction:column; gap:12px; margin-bottom:16px; padding:14px; border:1px solid var(--border-light); border-radius:12px;">
+                        <div class="campaign-form-grid">
+                            <div>
+                                <label class="form-label-sm">Project Name</label>
+                                <input type="text" id="dash-campaign-name-input" class="form-control" required placeholder="e.g. Youth Centre Construction">
+                            </div>
+                            <div>
+                                <label class="form-label-sm">Required Amount (Ksh)</label>
+                                <input type="number" id="dash-campaign-goal-input" class="form-control" min="1" step="1" required placeholder="0">
+                            </div>
+                        </div>
+                        <div class="campaign-form-grid">
+                            <div>
+                                <label class="form-label-sm">Fund Category</label>
+                                <select id="dash-campaign-category-input" class="select-custom" style="width:100%;">
+                                    <option value="Project Donation">Project Donation</option>
+                                    <option value="Pledge">Pledge</option>
+                                    <option value="Offering">Offering</option>
+                                    <option value="Tithe">Tithes</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label-sm">Branch</label>
+                                <select id="dash-campaign-branch-input" class="select-custom" style="width:100%;"></select>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="form-label-sm">Already Raised Before This System (Ksh)</label>
+                            <input type="number" id="dash-campaign-offset-input" class="form-control" min="0" step="1" placeholder="0">
+                        </div>
+                        <div style="display:flex; gap:10px;">
+                            <button type="submit" class="btn btn-primary-gradient">Save Project</button>
+                            <button type="button" id="dash-cancel-campaign-btn" class="btn btn-secondary">Cancel</button>
+                        </div>
+                    </form>
+                    <div id="dashboard-projects-list" class="giving-insights"></div>
+                </div>
+            </section>
+            <section id="admin_directory" class="view-panel" style="display: none;">
+                <div class="grid-dashboard" style="align-items: start;">
+                    
+                    <!-- Table Database -->
+                    <div class="card-glass">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem;">Membership Roll</h3>
+                            <div style="display:flex; gap: 8px;">
+                                <input type="text" id="member-search-input" placeholder="Search by name, email, or phone..." class="form-control" style="max-width:240px;">
+                                <select id="member-branch-filter" data-campus-select class="select-custom">
+                                    <option value="all">All Branches</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="financial-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Branch</th>
+                                        <th>Contact</th>
+                                        <th>Volunteering Skills</th>
+                                        <th>Engagement Index</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="member-directory-tbody">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Enlist Member Form -->
+                    <div class="card-glass">
+                        <h3 style="font-family: var(--font-header); font-size:1.05rem; margin-bottom:15px;">Enlist New Congregation Member</h3>
+                        <form id="add-member-form" style="display:flex; flex-direction:column; gap:12px;">
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">First Name</label>
+                                <input type="text" id="member-first-name" class="form-control" required placeholder="e.g. John">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Last Name</label>
+                                <input type="text" id="member-last-name" class="form-control" required placeholder="e.g. Doe">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Email Address</label>
+                                <input type="email" id="member-email" class="form-control" required placeholder="e.g. john.doe@email.com">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Phone Number</label>
+                                <input type="text" id="member-phone" class="form-control" required placeholder="e.g. +25470000000">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Branch Assignment</label>
+                                <select id="member-branch-select" data-campus-select class="select-custom" style="width: 100%;">
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Volunteer Skills (comma-separated)</label>
+                                <input type="text" id="member-skills" class="form-control" placeholder="e.g. Greeting, Sound Engineering">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Role / Position</label>
+                                <input type="text" id="member-role-position" class="form-control" placeholder="e.g. Choir Member, Usher, Elder">
+                            </div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Marital Status</label>
+                                    <select id="member-marital-status" class="select-custom" style="width:100%;">
+                                        <option value="">Select...</option>
+                                        <option>Single</option>
+                                        <option>Married</option>
+                                        <option>Engaged</option>
+                                        <option>Divorced</option>
+                                        <option>Widowed</option>
+                                        <option>Separated</option>
+                                        <option>Other</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Age</label>
+                                    <input type="number" id="member-age" class="form-control" min="0" max="130" placeholder="e.g. 34">
+                                </div>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Expectations from the Group</label>
+                                <textarea id="member-expectations" class="form-control" rows="2" placeholder="What does this member hope to experience in the congregation?"></textarea>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Previous Experience / Organization</label>
+                                <input type="text" id="member-previous-experience" class="form-control" placeholder="e.g. Choir director at ACK St. Andrew's">
+                            </div>
+                            <div style="padding:10px; background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.28); border-radius:10px; display:flex; flex-direction:column; gap:8px;">
+                                <div style="font-size:0.78rem; font-weight:600; color:var(--mmc-gold);">Giving: Pledge or One-time Gift</div>
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">How Will They Give?</label>
+                                    <select id="member-giving-type" class="select-custom" style="width:100%;">
+                                        <option value="pledge">Pledge - pay in installments</option>
+                                        <option value="full">Give the whole amount now (one-time)</option>
+                                    </select>
+                                </div>
+                                <div id="member-pledge-fields" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                                    <div>
+                                        <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Pledge Amount (Ksh)</label>
+                                        <input type="number" id="member-pledge-amount" class="form-control" min="0" step="1" placeholder="e.g. 50000">
+                                    </div>
+                                    <div>
+                                        <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Means Used to Pay</label>
+                                        <select id="member-pledge-method" class="select-custom" style="width:100%;">
+                                            <option value="">Select...</option>
+                                            <option>M-Pesa</option>
+                                            <option>Bank Transfer</option>
+                                            <option>Cash</option>
+                                            <option>Card</option>
+                                            <option>Cheque</option>
+                                            <option>PayPal</option>
+                                            <option>Other</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div id="member-give-project-field" style="display:none;">
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Give to Project / Fund (their choice)</label>
+                                    <select id="member-give-project" class="select-custom" style="width:100%;">
+                                        <option value="Offering">General Offering</option>
+                                        <option value="Tithe">Tithe</option>
+                                        <option value="General Contribution - Guest">General Contribution</option>
+                                    </select>
+                                </div>
+                                <span id="member-giving-hint" style="font-size:0.68rem; color:var(--text-secondary);">If an initial payment is entered below, it counts toward this pledge using the method chosen above.</span>
+                            </div>
+                            <div style="padding:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; display:flex; flex-direction:column; gap:8px;">
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Family Members (names, comma separated)</label>
+                                    <input type="text" id="member-family-members" class="form-control" placeholder="e.g. Mary Kamau, Junior Kamau">
+                                    <span style="font-size:0.68rem; color:var(--text-secondary);">Added by name - their gifts are credited to this registered member.</span>
+                                </div>
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Initial Contribution (Ksh)</label>
+                                    <input type="number" id="member-family-contribution" class="form-control" min="0" step="0.01" placeholder="e.g. 2000">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary-gradient" style="margin-top:8px;">Add Member to Registry</button>
+                        </form>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- 5. VIEW PANEL: FINANCIALS -->
+            <section id="admin_financials" class="view-panel" style="display: none;">
+                <div class="fin-tabs" role="tablist" aria-label="Financial views">
+                    <button type="button" class="fin-tab active" data-fin-tab="all" role="tab" aria-selected="true" onclick="ChurchApp.switchFinancialTab('all')">Contribution Ledger</button>
+                    <button type="button" class="fin-tab" data-fin-tab="guest" role="tab" aria-selected="false" onclick="ChurchApp.switchFinancialTab('guest')">Guest Contributions</button>
+                </div>
+
+                <div id="fin-panel-all">
+                    <div id="financial-summary" class="giving-insights"></div>
+                    <div id="giving-insights" class="giving-insights"></div>
+                    <div class="grid-dashboard" style="align-items: start;">
+
+                    <!-- Financial Ledger table -->
+                    <div class="card-glass">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem;">Stewardship Contribution Ledger</h3>
+                            <button id="export-csv-btn" class="btn btn-secondary btn-sm">Export Ledger CSV</button>
+                        </div>
+                        
+                        <div class="table-responsive">
+                            <table class="financial-table">
+                                <thead>
+                                    <tr>
+                                        <th>Receipt No.</th>
+                                        <th>Branch</th>
+                                        <th>Member Contributor</th>
+                                        <th>Allocation Fund</th>
+                                        <th style="text-align: right;">Amount</th>
+                                        <th>Date Filed</th>
+                                        <th>Channel</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="financials-tbody">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Record Giving card -->
+                    <div class="card-glass">
+                        <h3 style="font-family: var(--font-header); font-size:1.05rem; margin-bottom:15px;">Log Contribution Offline</h3>
+                        <form id="record-tx-form" style="display:flex; flex-direction:column; gap:12px;">
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Member Contributor</label>
+                                <select id="tx-member-select" data-member-select class="select-custom" style="width:100%;">
+                                    <option value="anonymous">Anonymous Giver</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Allocation Target</label>
+                                <select id="tx-category-select" class="select-custom" style="width:100%;">
+                                    <option value="Tithe">Tithe</option>
+                                    <option value="Offering">Offering</option>
+                                    <option value="Pledge">Pledge Payment</option>
+                                    <option value="Project Donation">Project/Building Fund</option>
+                                </select>
+                            </div>
+                            <div id="tx-pledge-panel" class="tx-pledge-panel" style="display:none;">
+                                <div class="tx-pledge-head">
+                                    <strong>My Pledge</strong>
+                                    <span id="tx-pledge-member">&mdash;</span>
+                                </div>
+                                <div class="tx-pledge-grid">
+                                    <div class="tx-pledge-stat">
+                                        <span>Promised</span>
+                                        <strong id="tx-pledge-amount">Ksh 0</strong>
+                                    </div>
+                                    <div class="tx-pledge-stat">
+                                        <span>Contributed</span>
+                                        <strong id="tx-pledge-paid">Ksh 0</strong>
+                                    </div>
+                                    <div class="tx-pledge-stat tx-pledge-balance-stat">
+                                        <span>Balance</span>
+                                        <strong id="tx-pledge-balance">Ksh 0</strong>
+                                    </div>
+                                </div>
+                                <div id="tx-pledge-methods" class="tx-pledge-methods"></div>
+                                <p id="tx-pledge-hint" class="tx-pledge-hint"></p>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Contribution Amount (Ksh)</label>
+                                <div class="give-quick-chips" role="group" aria-label="Quick amounts" id="tx-quick-chips">
+                                    <button type="button" class="give-chip" data-amount="200">200</button>
+                                    <button type="button" class="give-chip" data-amount="500">500</button>
+                                    <button type="button" class="give-chip" data-amount="1000">1,000</button>
+                                    <button type="button" class="give-chip" data-amount="5000">5,000</button>
+                                    <button type="button" class="give-chip" data-amount="custom">Custom</button>
+                                </div>
+                                <input type="number" step="1" min="1" id="tx-amount-input" class="form-control" required placeholder="0">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Payment Gateway</label>
+                                <select id="tx-method-select" class="select-custom" style="width:100%;">
+                                    <option value="M-Pesa">M-Pesa</option>
+                                    <option value="Card">Card</option>
+                                    <option value="Bank Transfer">Bank Transfer</option>
+                                    <option value="Cash">Cash</option>
+                                </select>
+                            </div>
+                            <div id="tx-mpesa-hint" class="mpesa-hint">
+                                <span class="mpesa-badge">M-PESA</span>
+                                <span>You will get an STK prompt on the phone to confirm. Paybill <strong id="tx-mpesa-paybill">-</strong>, account <strong id="tx-mpesa-account">-</strong>.</span>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Frequency</label>
+                                <select id="tx-frequency-select" class="select-custom" style="width:100%;">
+                                    <option value="once">One-time gift</option>
+                                    <option value="weekly">Repeat weekly</option>
+                                    <option value="monthly">Repeat monthly</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Date Processed</label>
+                                <input type="date" id="tx-date-input" class="form-control">
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary-gradient" style="margin-top:8px;">File Record & Generate Receipt</button>
+                        </form>
+                    </div>
+
+                    </div>
+                </div>
+
+                <div id="fin-panel-guest" style="display:none;">
+                    <div id="guest-contrib-summary" class="giving-insights"></div>
+                    <div class="grid-dashboard" style="align-items: start;">
+
+                        <!-- Guest Contributions Ledger table -->
+                        <div class="card-glass">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem;">Guest Contributions Ledger</h3>
+                            <button id="export-guest-csv-btn" class="btn btn-secondary btn-sm">Export Guest CSV</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="financial-table">
+                                <thead>
+                                    <tr>
+                                        <th>Receipt No.</th>
+                                        <th>Branch</th>
+                                        <th>Guest Contributor</th>
+                                        <th>Allocation Fund</th>
+                                        <th style="text-align: right;">Amount</th>
+                                        <th>Date Filed</th>
+                                        <th>Channel</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="guest-contrib-tbody">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                        <!-- Log / edit a guest contribution -->
+                        <div class="card-glass">
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem; margin-bottom:4px;">Log Guest Contribution</h3>
+                            <p style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:12px;">Record a walk-in visitor gift, or pick <strong>Edit</strong> in the ledger to update an existing entry.</p>
+                            <form id="guest-tx-form" style="display:flex; flex-direction:column; gap:12px;">
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Guest Contributor</label>
+                                    <input type="text" id="guest-tx-name" class="form-control" placeholder="e.g. Jane Wanjiru" required>
+                                </div>
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Allocation Target</label>
+                                    <select id="guest-tx-category" class="select-custom" style="width:100%;"></select>
+                                </div>
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Contribution Amount (Ksh)</label>
+                                    <input type="number" step="1" min="1" id="guest-tx-amount" class="form-control" required placeholder="0">
+                                </div>
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Payment Method</label>
+                                    <select id="guest-tx-method" class="select-custom" style="width:100%;">
+                                        <option value="M-Pesa">M-Pesa</option>
+                                        <option value="Bank Transfer">Bank Transfer</option>
+                                        <option value="Cash">Cash</option>
+                                        <option value="Card">Card</option>
+                                        <option value="Cheque">Cheque</option>
+                                        <option value="PayPal">PayPal</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Date Processed</label>
+                                    <input type="date" id="guest-tx-date" class="form-control">
+                                </div>
+                                <input type="hidden" id="guest-tx-edit-id" value="">
+                                <div style="display:flex; gap:8px;">
+                                    <button type="submit" id="guest-tx-submit-btn" class="btn btn-primary-gradient" style="flex:1; margin-top:2px;">Add Guest Contribution</button>
+                                    <button type="button" id="guest-tx-cancel-btn" class="btn btn-secondary" style="display:none;" onclick="ChurchApp.cancelGuestTxEdit()">Cancel</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW PANEL: STAFF -->
+                        <section id="admin_staff" class="view-panel" style="display: none;">
+                <div class="grid-dashboard" style="align-items: start;">
+
+                    <!-- Staff Members (names + roles) -->
+                    <div class="card-glass" style="grid-column: 1 / -1;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:15px;">
+                            <div>
+                                <h3 style="font-family: var(--font-header); font-size:1.05rem;">Staffs</h3>
+                                <span style="font-size:0.75rem; color:var(--text-secondary);">Edit, replace or remove staff - changes apply to the member's profile too</span>
+                            </div>
+                            <input type="search" id="staff-search" class="form-control" style="max-width:260px; min-width:200px;" placeholder="Search staff by name..." aria-label="Search staff by name">
+                            <button type="button" class="btn btn-primary-gradient btn-sm" onclick="ChurchApp.openStaffEditor()">+ Add Staff</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="financial-table">
+                                <thead>
+                                    <tr>
+                                        <th>Staff Member</th>
+                                        <th>Branch</th>
+                                        <th>Role / Position</th>
+                                        <th>Contact</th>
+                                        <th>Volunteer Skills</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="staff-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- 6. VIEW PANEL: MINISTRY & ROTAS -->
+            <section id="admin_ministry" class="view-panel" style="display: none;">
+                <div class="card-glass">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:18px;">
+                        <div>
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem;">Ministry &amp; Rotas - Volunteer Tasks</h3>
+                            <span style="font-size:0.75rem; color:var(--text-secondary);">Create volunteer tasks, assign one or more people per role, and let AI suggest members with the right skills</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <span style="font-size:0.8rem; color:#fff;">Select Event:</span>
+                            <select id="rota-event-select" class="select-custom">
+                                <!-- Dynamic options -->
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="rota-stats" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:18px;">
+                        <!-- Summary cards populated here -->
+                    </div>
+
+                    <div style="border:1px solid rgba(148,163,184,0.18); border-radius:12px; padding:14px; margin-bottom:18px; background:rgba(255,255,255,0.03);">
+                        <h4 style="font-family: var(--font-header); font-size:0.95rem; margin-bottom:10px;">Add New Volunteer Task</h4>
+                        <form id="add-rota-task-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+                            <div style="flex:1; min-width:220px;">
+                                <label class="form-label-sm" for="rota-task-name">Task / Role <span style="opacity:.6;">(e.g. Ushering, First Aid)</span></label>
+                                <input type="text" id="rota-task-name" class="form-control" placeholder="e.g. Ushering" required>
+                            </div>
+                            <div style="width:130px;">
+                                <label class="form-label-sm" for="rota-task-slots">People needed</label>
+                                <input type="number" id="rota-task-slots" class="form-control" min="1" max="50" value="1">
+                            </div>
+                            <button type="submit" class="btn btn-primary-gradient btn-sm">+ Add Task</button>
+                        </form>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:1fr; gap:15px;" id="rota-required-roles">
+                        <!-- Roster slots populated here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW PANEL: FOLLOW-UPS / ASSIMILATION PIPELINE -->
+            <section id="admin_followups" class="view-panel" style="display: none;">
+                <div class="card-glass">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
+                        <div>
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem;">Assimilation Pipeline</h3>
+                            <span style="font-size:0.75rem; color:var(--text-secondary);">Move first-time guests toward committed membership</span>
+                        </div>
+                    </div>
+                    <form id="add-followup-form" class="followup-add-form" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:10px; align-items:end; width:100%; margin-bottom:18px;">
+                        <div>
+                            <label class="form-label-sm" for="followup-name">Guest name</label>
+                            <input type="text" id="followup-name" class="form-control" placeholder="e.g. Jane Wanjiru" required aria-label="New guest name">
+                        </div>
+                        <div>
+                            <label class="form-label-sm" for="followup-contact">Contact (phone)</label>
+                            <input type="tel" id="followup-contact" class="form-control" placeholder="e.g. +254712345678" aria-label="Guest contact phone">
+                        </div>
+                        <div>
+                            <label class="form-label-sm" for="followup-owner">Assign to (owner)</label>
+                            <input type="text" id="followup-owner" class="form-control" placeholder="e.g. Pastor Sam" aria-label="Owner">
+                        </div>
+                        <div>
+                            <label class="form-label-sm" for="followup-marital">Marital status</label>
+                            <select id="followup-marital" class="form-control">
+                                <option value="">Not specified</option>
+                                <option>Single</option>
+                                <option>Married</option>
+                                <option>Engaged</option>
+                                <option>Widowed</option>
+                                <option>Divorced</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label-sm" for="followup-age">Age</label>
+                            <input type="number" id="followup-age" class="form-control" min="1" max="130" placeholder="e.g. 29" aria-label="Age">
+                        </div>
+                        <div>
+                            <label class="form-label-sm" for="followup-expectations">Expectations</label>
+                            <input type="text" id="followup-expectations" class="form-control" placeholder="e.g. Wants to join youth ministry" aria-label="Expectations">
+                        </div>
+                        <div>
+                            <label class="form-label-sm" for="followup-previous">Previous activity</label>
+                            <input type="text" id="followup-previous" class="form-control" placeholder="e.g. Served in choir at a previous church" aria-label="Previous activity">
+                        </div>
+                        <div>
+                            <label class="form-label-sm" for="followup-contributed">Contributed (Ksh)</label>
+                            <input type="number" id="followup-contributed" class="form-control" min="0" step="1" placeholder="e.g. 1500" aria-label="Amount contributed">
+                        </div>
+                        <button type="submit" class="btn btn-primary-gradient btn-sm">Add Guest</button>
+                    </form>
+                    <div id="followup-board" class="followup-board"></div>
+                </div>
+
+                <!-- Visitors Log dashboard -->
+                <div class="card-glass" style="margin-top:18px; padding:16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+                        <div>
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem;">Visitors Log</h3>
+                            <span style="font-size:0.75rem; color:var(--text-secondary);">Every visitor with their details and the date they visited</span>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="financial-table">
+                            <thead>
+                                <tr>
+                                    <th>Visitor</th>
+                                    <th>Contact</th>
+                                    <th>Visited Date</th>
+                                    <th>Marital Status</th>
+                                    <th>Age</th>
+                                    <th>Expectations</th>
+                                    <th>Previous Activity</th>
+                                    <th>Contributed</th>
+                                    <th>Owner</th>
+                                    <th>Stage</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="visitors-log-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW PANEL: SMALL GROUPS -->
+            <section id="admin_groups" class="view-panel" style="display: none;">
+                <!-- Linked to the member app: event RSVPs from the Home tab and
+                     small-group join requests from the Groups tab feed in here. -->
+                <div class="card-glass" style="margin-bottom:20px;">
+                    <h3 style="font-family: var(--font-header); font-size:1.05rem; margin-bottom:4px; display:flex; align-items:center; gap:8px;">
+                        <svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true" style="width:20px;height:20px;color:#c4b5fd;"><path d="M20 5H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="M2.5 9h19M8 21v-5h8v5"/></svg> From the App
+                        <span style="font-size:0.7rem; font-weight:400; color:var(--text-secondary);">Members RSVP "Going" to events and request to join small groups in the phone app - track or approve them here.</span>
+                    </h3>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:12px;">
+                        <div>
+                            <h4 style="font-size:0.85rem; font-family:var(--font-header); margin-bottom:8px; color:var(--text-secondary);">Event RSVPs - Who's Going</h4>
+                            <div id="groups-event-rsvps" style="display:flex; flex-direction:column; gap:10px;"></div>
+                        </div>
+                        <div>
+                            <h4 style="font-size:0.85rem; font-family:var(--font-header); margin-bottom:8px; color:var(--text-secondary);">Small Group Join Requests</h4>
+                            <div id="groups-join-requests" style="display:flex; flex-direction:column; gap:10px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid-dashboard" style="align-items: start;">
+                    <div class="card-glass">
+                        <h3 style="font-family: var(--font-header); font-size:1.05rem; margin-bottom:4px;">Small Groups Directory</h3>
+                        <span style="font-size:0.75rem; color:var(--text-secondary);">Community groups where members connect midweek - distinct from serving ministries</span>
+                        <div id="groups-grid" class="groups-grid"></div>
+                    </div>
+                    <div class="card-glass">
+                        <h3 style="font-family: var(--font-header); font-size:1.05rem; margin-bottom:15px;">Start a New Group</h3>
+                        <form id="add-group-form" style="display:flex; flex-direction:column; gap:12px;">
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Group Name</label>
+                                <input type="text" id="group-name" class="form-control" required placeholder="e.g. Young Adults Life Group">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Meeting Schedule</label>
+                                <input type="text" id="group-schedule" class="form-control" placeholder="e.g. Tue 7:00 PM">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Branch</label>
+                                <select id="group-branch" data-campus-select class="select-custom" style="width:100%;">
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Description</label>
+                                <input type="text" id="group-desc" class="form-control" placeholder="Short description">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Members <span style="opacity:.6;">(add as many as you want)</span></label>
+                                <input type="text" id="group-member-search" class="form-control" placeholder="Search members to add..." autocomplete="off">
+                                <div id="group-member-options" class="member-options"></div>
+                                <div id="group-member-pills" class="group-member-pills"></div>
+                            </div>
+                            <button type="submit" class="btn btn-primary-gradient" style="margin-top:6px;">Create Group</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="card-glass" style="margin-top:20px;">
+                    <h3 style="font-family: var(--font-header); font-size:1.05rem; margin-bottom:4px; display:flex; align-items:center; gap:8px;">
+                        <svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true" style="width:20px;height:20px;color:#c4b5fd;"><path d="M3 10v4a1 1 0 0 0 1 1h3l7 4V5L7 9H4a1 1 0 0 0-1 1z"/><path d="M17.5 8.5a4 4 0 0 1 0 7"/></svg> Group Announcements
+                        <span style="font-size:0.7rem; font-weight:400; color:var(--text-secondary);">Post to a small group - every current member is notified by email or WhatsApp, and it appears in the member app.</span>
+                    </h3>
+                    <div id="groups-announcements-log" style="display:flex; flex-direction:column; gap:10px; margin-top:12px;"></div>
+                </div>
+            </section>
+
+            <!-- 7. VIEW PANEL: COMMUNICATIONS -->
+            <section id="admin_communications" class="view-panel" style="display: none;">
+                <!-- Suggested announcements awaiting admin approval -->
+                <div class="card-glass" style="margin-bottom:25px;" id="suggested-announcements-card">
+                    <h3 style="font-family: var(--font-header); font-size:1.05rem; display:flex; align-items:center; gap:8px; margin-bottom:6px;"><svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true" style="width:20px;height:20px;color:#c4b5fd;"><path d="M3 10v4a1 1 0 0 0 1 1h3l7 4V5L7 9H4a1 1 0 0 0-1 1z"/><path d="M17.5 8.5a4 4 0 0 1 0 7"/></svg> Suggested Announcements <span class="status-pill status-pending" id="suggested-ann-count">0</span></h3>
+                    <span style="font-size:0.75rem; color:var(--text-secondary);">Members&#39; suggestions wait here for your approval before they go public.</span>
+                    <div id="suggested-ann-log" class="suggested-ann-log" style="margin-top:14px;"></div>
+                </div>
+                <!-- Broadcast announcements -->
+                <div class="card-glass" style="margin-bottom:25px;">
+                    <div class="broadcast-layout">
+                        <form id="broadcast-form" class="broadcast-compose">
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem; margin-bottom:4px; display:flex; align-items:center; gap:8px;"><svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true" style="width:20px;height:20px;color:#93c5fd;"><path d="M3 10v4a1 1 0 0 0 1 1h3l7 4V5L7 9H4a1 1 0 0 0-1 1z"/><path d="M17.5 8.5a4 4 0 0 1 0 7"/></svg> Broadcast Announcement</h3>
+                            <span style="font-size:0.75rem; color:var(--text-secondary);">Reach your congregation across email, SMS, and push</span>
+                            <div style="margin-top:14px;">
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Title</label>
+                                <input type="text" id="broadcast-title" class="form-control" required placeholder="e.g. Sunday service moved to 10 AM">
+                            </div>
+                            <div style="margin-top:12px;">
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Message</label>
+                                <textarea id="broadcast-body" class="form-control" style="min-height:80px; font-family:inherit;" required placeholder="Write your announcement..."></textarea>
+                            </div>
+                            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">
+                                <div style="flex:1; min-width:160px;">
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Audience</label>
+                                    <select id="broadcast-audience" data-campus-select class="select-custom" style="width:100%;">
+                                        <option value="all">All Branches</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:6px;">Channels</label>
+                                    <div class="broadcast-channels">
+                                        <label><input type="checkbox" class="broadcast-channel" value="email" checked> Email</label>
+                                        <label><input type="checkbox" class="broadcast-channel" value="sms" checked> SMS</label>
+                                        <label><input type="checkbox" class="broadcast-channel" value="push"> Push</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary-gradient" style="margin-top:16px;">Send Broadcast</button>
+                        </form>
+                        <div class="broadcast-log-wrap">
+                            <h4 style="font-size:0.9rem; font-family:var(--font-header); margin-bottom:10px;">Recent Broadcasts</h4>
+                            <div id="broadcast-log" class="broadcast-log"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-dashboard" style="grid-template-columns:1fr 1fr;">
+
+                    <!-- Prayer request inbox + care message composer -->
+                    <div class="card-glass">
+                        <h3 style="font-family: var(--font-header); font-size:1.05rem; margin-bottom:15px;">AI Care Inbox (Incoming Prayer Requests)</h3>
+                        <div class="care-inbox-composer">
+                            <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Post a Care Message to Members</label>
+                            <input type="text" id="care-message-title" class="form-control" placeholder="Subject (optional)">
+                            <textarea id="care-message-body" class="form-control" style="min-height:70px; font-family:inherit;" placeholder="Write a care message to be inboxed to members..."></textarea>
+                            <div class="care-inbox-composer-actions">
+                                <button id="care-post-btn" class="btn btn-primary-gradient btn-sm" onclick="ChurchApp.postCareMessage()">Post to Members</button>
+                                <button id="care-cancel-btn" class="btn btn-secondary btn-sm" style="display:none;" onclick="ChurchApp.cancelEditCareMessage()">Cancel</button>
+                            </div>
+                            <div id="care-inbox-posts" class="care-inbox-posts"></div>
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:12px;" id="prayer-requests-list">
+                            <!-- Dynamic items -->
+                        </div>
+                    </div>
+
+                    <!-- AI Sermon Repurposer Tool -->
+                    <div class="card-glass">
+                        <div class="ai-header-badge"><svg class="badge-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.7 4.8 4.8 1.7-4.8 1.7L12 16.5l-1.7-4.8L5.5 10l4.8-1.7z"/><path d="M18.5 15.5l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/></svg> SERMON REPURPOSING ASSISTANT</div>
+                        <h3 style="font-family: var(--font-header); font-size:1.05rem; margin:12px 0 8px 0;">Draft Social Kits & Devotions</h3>
+                        <p style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:15px;">Input your sermon script to instantly compile social highlights, a 3-day study devotional, and cell discussion outlines.</p>
+                        
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Sermon Topic / Title</label>
+                                <input type="text" id="sermon-title-input" class="form-control" placeholder="e.g. Trusting in Abundance">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Sermon Transcript / Summary Notes</label>
+                                <textarea id="sermon-notes-input" class="form-control" style="min-height:120px; font-family:inherit;" placeholder="Paste sermon paragraphs here..."></textarea>
+                            </div>
+                            <button id="ai-repurpose-btn" class="btn btn-primary-gradient">Repurpose Sermon via AI</button>
+                        </div>
+
+                        <!-- Results container -->
+                        <div id="ai-repurpose-results"></div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- 9. VIEW PANEL: SETTINGS (church profile, branches, projects) -->
+            <section id="admin_settings" class="view-panel" style="display: none;">
+                <div class="grid-dashboard" style="align-items: start;">
+
+                    <!-- Church profile -->
+                    <div class="card-glass">
+                        <div style="margin-bottom:14px;">
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem;">Church Profile</h3>
+                            <span style="font-size:0.75rem; color:var(--text-secondary);">This identity is shown across the console, member statements and email.</span>
+                        </div>
+                        <form id="church-profile-form" style="display:flex; flex-direction:column; gap:12px;">
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Church Name</label>
+                                <input type="text" id="church-name-input" class="form-control" required placeholder="e.g. Maximum Miracle Centre">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Short Name</label>
+                                <input type="text" id="church-short-name-input" class="form-control" placeholder="e.g. MMC">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Tagline</label>
+                                <input type="text" id="church-tagline-input" class="form-control" placeholder="Mission or vision statement">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Website</label>
+                                <input type="text" id="church-website-input" class="form-control" placeholder="https://">
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Church YouTube Channel</label>
+                                <input type="text" id="church-youtube-input" class="form-control" placeholder="https://youtube.com/@YourChurch">
+                                <span style="font-size:0.68rem; color:var(--text-secondary);">Paste the channel link - every service appears in the member app's Sermons tab as a scrollable feed.</span>
+                            </div>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Contact Email (shown to members)</label>
+                                <input type="email" id="church-contact-email-input" class="form-control" placeholder="e.g. office@maximummiracle.org">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Contact Phone (shown to members)</label>
+                                <input type="tel" id="church-contact-phone-input" class="form-control" placeholder="e.g. +254712345678">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">News Bullet</label>
+                                <textarea id="church-news-bullet-input" class="form-control" rows="3" placeholder="Shown as the news ticker in the member app. e.g. Sunday services at 8:30 AM & 10:00 AM..."></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary-gradient">Save Church Profile</button>
+                        </form>
+                    </div>
+
+                    <!-- Branches -->
+                    <div class="card-glass">
+                        <div style="margin-bottom:14px;">
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem;" id="branches-manager-title">Branches</h3>
+                            <span style="font-size:0.75rem; color:var(--text-secondary);" id="branches-manager-hint">Add new branches or edit existing ones for this church.</span>
+                        </div>
+                        <form id="add-branch-form" style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;">
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Branch Name</label>
+                                <input type="text" id="branch-name-input" class="form-control" required placeholder="e.g. Nairobi West">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Location</label>
+                                <input type="text" id="branch-location-input" class="form-control" placeholder="Town, county">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Short Code</label>
+                                <input type="text" id="branch-code-input" class="form-control" placeholder="e.g. NWE">
+                            </div>
+                            <div style="display:flex; gap:10px;">
+                                <button type="submit" id="branch-form-submit" class="btn btn-primary-gradient">Add Branch</button>
+                                <button type="button" id="branch-form-cancel" class="btn btn-secondary" style="display:none;">Cancel Edit</button>
+                            </div>
+                        </form>
+                        <div id="branches-manager-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+                    </div>
+                </div>
+
+                <!-- Projects / campaigns -->
+                <div class="card-glass" style="margin-top:15px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                        <div>
+                            <h3 style="font-family: var(--font-header); font-size:1.05rem;">Projects &amp; Pledge Campaigns</h3>
+                            <span style="font-size:0.75rem; color:var(--text-secondary);">Each project tracks a goal; a pledge shows the money already removed and the remaining balance.</span>
+                        </div>
+                        <button type="button" id="new-project-btn" class="btn btn-secondary btn-sm">+ New Project</button>
+                    </div>
+                    <form id="add-campaign-form" style="display:none; flex-direction:column; gap:12px; margin-bottom:16px; padding:14px; border:1px solid var(--border-light); border-radius:12px;">
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Project Name</label>
+                                <input type="text" id="campaign-name-input" class="form-control" required placeholder="e.g. Youth Centre Construction">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Goal (Ksh)</label>
+                                <input type="number" id="campaign-goal-input" class="form-control" min="1" step="1" required placeholder="0">
+                            </div>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Fund Category</label>
+                                <select id="campaign-category-input" class="select-custom" style="width:100%;">
+                                    <option value="Project Donation">Project/Building Fund</option>
+                                    <option value="Pledge">Pledge</option>
+                                    <option value="Offering">Offering</option>
+                                    <option value="Tithe">Tithe</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Branch</label>
+                                <select id="campaign-branch-input" class="select-custom" style="width:100%;"></select>
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Already Raised Before This System (Ksh)</label>
+                            <input type="number" id="campaign-offset-input" class="form-control" min="0" step="1" placeholder="0">
+                        </div>
+                        <div style="display:flex; gap:10px;">
+                            <button type="submit" class="btn btn-primary-gradient">Save Project</button>
+                            <button type="button" id="cancel-campaign-btn" class="btn btn-secondary">Cancel</button>
+                        </div>
+                    </form>
+                    <div id="projects-manager-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+                </div>
+
+                <!-- Account security: password, MFA, recovery codes, sessions (app.js renders the content). -->
+                <div class="card-glass" style="margin-top:15px;">
+                    <div style="margin-bottom:14px;">
+                        <h3 style="font-family: var(--font-header); font-size:1.05rem;">Security &amp; Sign-in</h3>
+                        <span style="font-size:0.75rem; color:var(--text-secondary);">Password, two-factor authentication, recovery codes and the devices signed in to your account.</span>
+                    </div>
+                    <div id="security-settings-root"></div>
+                </div>
+            </section>
+
+            <!-- 8. VIEW PANEL: MOBILE PREVIEW -->
+            <section id="mobile_preview" class="view-panel" style="display: none;">
+                <div class="mobile-simulation-layout">
+                    <div class="mobile-stage-caption">
+                        <strong>Live Member App Preview</strong>
+                        <span>This is exactly what congregation members see on their phones - tap through Home, Sermons, Scripture, Giving, and Profile, plus Projects, Serve, and AI Care from your profile.</span>
+                    </div>
+                    <div class="smartphone">
+                        <div class="mobile-screen">
+                            
+                            <!-- Smartphone top bar layout -->
+                            <div class="mobile-status-bar">
+                                <span>9:41</span>
+                                <span class="mobile-status-icons">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h2v-4H3zM8 18h2V9H8zM13 18h2V6h-2zM18 18h2V3h-2z"/></svg>
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2.5 9.5a13 13 0 0 1 19 0M5.5 13a8.5 8.5 0 0 1 13 0M8.5 16.5a4 4 0 0 1 7 0"/><circle cx="12" cy="19.5" r="0.6" fill="currentColor"/></svg>
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="8" width="17" height="9" rx="2"/><rect x="4" y="10" width="11" height="5" rx="0.5" fill="currentColor" stroke="none"/><path d="M21 11v3" stroke-linecap="round"/></svg>
+                                </span>
+                            </div>
+
+                            <!-- SCREEN SUBVIEW 1: HOME FEED -->
+                            <div id="mobile-home" class="mobile-app-body" style="display:block;">
+                                <div class="mobile-header mobile-home-header">
+                                    <span class="mobile-greeting" id="mobile-greeting">Good morning!</span>
+                                    <h3 id="mobile-welcome">Welcome to Church Connect</h3>
+                                    <span class="mobile-tagline">Growing together in faith &amp; love</span>
+                                </div>
+
+                                <div class="mobile-news-ticker" id="mobile-news-bullet" aria-label="Church news">
+                                    <span class="mobile-news-label">NEWS</span>
+                                    <span class="mobile-news-text">Loading church news...</span>
+                                </div>
+
+                                <div class="mobile-devotional-hero">
+                                    <span class="mobile-devotional-eyebrow">Daily Devotional</span>
+                                    <strong class="mobile-devotional-title">Reflecting on True Trust</strong>
+                                    <p class="mobile-devotional-text">"For where your treasure is, there will your heart be also." &mdash; Luke 12:34</p>
+                                    <button type="button" class="mobile-devotional-btn" onclick="ChurchApp.switchMobileView('bible')">Read Devotional</button>
+                                </div>
+
+                                <div class="mobile-quick-actions">
+                                    <button type="button" class="mobile-quick-tile" onclick="ChurchApp.mobileQuickAction('events')">
+                                        <span class="mobile-quick-ico ico-purple"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="16" rx="2.4"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg></span>
+                                        <strong>Events</strong>
+                                        <span>See what's coming up</span>
+                                    </button>
+                                    <button type="button" class="mobile-quick-tile" onclick="ChurchApp.mobileQuickAction('groups')">
+                                        <span class="mobile-quick-ico ico-blue"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3.1"/><path d="M2.8 19c0-2.9 2.4-4.8 5.4-4.8 1.5 0 2.8.5 3.8 1.3M16.5 5.9a3.1 3.1 0 0 1 0 5.4M14.6 14.5c2.5.2 4.6 1.9 4.6 4.5"/></svg></span>
+                                        <strong>Groups</strong>
+                                        <span>Connect &amp; community</span>
+                                    </button>
+                                    <button type="button" class="mobile-quick-tile" onclick="ChurchApp.switchMobileView('give')">
+                                        <span class="mobile-quick-ico ico-gold"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5S3.5 15.8 3.5 9.9c0-2.8 2-4.4 4.1-4.4 1.7 0 3.3 1 4.4 2.6C13.1 6.5 14.7 5.5 16.4 5.5c2.1 0 4.1 1.6 4.1 4.4 0 5.9-8.5 10.6-8.5 10.6z"/></svg></span>
+                                        <strong>Give</strong>
+                                        <span>Tithe &amp; offerings</span>
+                                    </button>
+                                    <button type="button" class="mobile-quick-tile" onclick="ChurchApp.switchMobileView('sermons')">
+                                        <span class="mobile-quick-ico ico-pink"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.4"/><path d="M10 9l5 3-5 3z"/></svg></span>
+                                        <strong>Sermons</strong>
+                                        <span>Watch &amp; listen</span>
+                                    </button>
+                                </div>
+
+                                <div class="mobile-section-head" id="mobile-events-head">
+                                    <h4>Upcoming Events</h4>
+                                </div>
+                                <div id="mobile-upcoming-events" class="mobile-event-list">
+                                    <!-- Populated dynamically -->
+                                </div>
+
+                                <div class="mobile-section-head" id="mobile-groups-head">
+                                    <h4>Find a Small Group</h4>
+                                </div>
+                                <div id="mobile-groups-list" class="mobile-groups-list">
+                                    <!-- Populated dynamically -->
+                                </div>
+
+                                <div id="mobile-group-announcements" class="mobile-group-announcements"></div>
+
+                                <div id="mobile-family-section" class="mobile-family-wrap"></div>
+
+                                <div class="mobile-announcements-card">
+                                    <div class="mobile-section-head">
+                                        <h4>Church Announcements</h4>
+                                    </div>
+                                    <div id="mobile-announcements-list" class="mobile-announcements-list"></div>
+                                    <div class="mobile-suggest-ann">
+                                        <h5 style="font-size:0.82rem; font-family:var(--font-header); margin:0 0 8px;">Suggest an Announcement</h5>
+                                        <input type="text" id="suggest-ann-title" class="form-control" placeholder="Title - e.g. Choir practice Saturday" style="margin-bottom:8px;">
+                                        <textarea id="suggest-ann-body" class="form-control" rows="2" placeholder="What would you like the church to announce?"></textarea>
+                                        <button type="button" class="mobile-rsvp-btn mobile-prayer-submit" onclick="ChurchApp.submitAnnouncementSuggestion()">Submit for Approval</button>
+                                    </div>
+                                </div>
+
+                                <div class="mobile-prayers-card">
+
+
+                                    <div class="mobile-prayers-head">
+                                        <div>
+                                            <h4>Prayers</h4>
+                                            <span>Submit a request</span>
+                                        </div>
+                                        <button type="button" class="mobile-link-btn" onclick="ChurchApp.toggleMobilePrayerList()">View all &gt;</button>
+                                    </div>
+                                    <div id="mobile-prayer-list" class="mobile-prayer-list" style="display:none;">
+                                        <!-- Populated dynamically -->
+                                    </div>
+                                    <textarea id="mobile-prayer-textarea" class="form-control mobile-prayer-input" placeholder="What are you praying for today?"></textarea>
+                                    <button type="button" class="mobile-rsvp-btn mobile-prayer-submit" onclick="ChurchApp.submitMobilePrayer()">Submit Request</button>
+                                </div>
+                            </div>
+
+                            <!-- SCREEN SUBVIEW 2: SERMONS -->
+                            <div id="mobile-sermons" class="mobile-app-body" style="display:none;">
+                                <div class="mobile-header">
+                                    <h3>Sermons & Bible Studies</h3>
+                                    <span style="font-size:0.7rem; color:var(--text-secondary);">Stream audio & video lessons</span>
+                                </div>
+                                
+                                <div id="mobile-sermon-player-container" style="display:none;"></div>
+                                
+                                <div id="mobile-sermon-list" style="display:flex; flex-direction:column; gap:10px;">
+                                    <!-- Sermons items -->
+                                </div>
+                            </div>
+
+                            <!-- SCREEN SUBVIEW 3: BIBLE READER -->
+                                                        <div id="mobile-bible" class="mobile-app-body" style="display:none;">
+                                <div class="mobile-header" style="display:flex; justify-content:space-between; align-items:center;">
+                                    <h3>Scriptures</h3>
+                                    <span id="reading-streak" class="reading-streak"></span>
+                                </div>
+
+                                <!-- Mini leather Bible cover -->
+                                <div class="bible-book-cover">
+                                    <div class="bible-cover-frame">
+                                        <div class="bible-cover-cross">&#10013;</div>
+                                        <div class="bible-cover-title">The Holy Bible</div>
+                                        <div class="bible-cover-rule"></div>
+                                        <div class="bible-cover-sub">King James Version</div>
+                                    </div>
+                                    <div class="bible-cover-ribbon"></div>
+                                </div>
+
+                                <!-- Verse of the Day -->
+                                <div id="verse-of-day" class="verse-of-day"></div>
+
+                                <!-- Reader toolbar -->
+                                <div class="bible-reader-toolbar">
+                                    <div style="display:flex; gap:6px;">
+                                        <select id="mobile-bible-book" class="select-custom bible-tool-select">
+                                            <option value="all">All Books</option>
+                                            <option value="Genesis">Genesis</option>
+                                            <option value="Psalm">Psalms</option>
+                                            <option value="Proverbs">Proverbs</option>
+                                            <option value="Malachi">Malachi</option>
+                                            <option value="Isaiah">Isaiah</option>
+                                            <option value="Matthew">Matthew</option>
+                                            <option value="Mark">Mark</option>
+                                            <option value="Luke">Luke</option>
+                                            <option value="John">John</option>
+                                            <option value="Romans">Romans</option>
+                                            <option value="Ephesians">Ephesians</option>
+                                            <option value="Philippians">Philippians</option>
+                                            <option value="Hebrews">Hebrews</option>
+                                            <option value="James">James</option>
+                                            <option value="1 Corinthians">1 Corinthians</option>
+                                            <option value="2 Corinthians">2 Corinthians</option>
+                                            <option value="Titus">Titus</option>
+                                        </select>
+                                        <select id="mobile-bible-chapter" class="select-custom bible-tool-select" style="width:80px;">
+                                            <option value="all">Ch. All</option>
+                                            <option value="1">Ch. 1</option>
+                                            <option value="2">Ch. 2</option>
+                                            <option value="3">Ch. 3</option>
+                                            <option value="4">Ch. 4</option>
+                                            <option value="5">Ch. 5</option>
+                                            <option value="10">Ch. 10</option>
+                                            <option value="11">Ch. 11</option>
+                                            <option value="12">Ch. 12</option>
+                                            <option value="13">Ch. 13</option>
+                                            <option value="17">Ch. 17</option>
+                                            <option value="23">Ch. 23</option>
+                                            <option value="40">Ch. 40</option>
+                                            <option value="105">Ch. 105</option>
+                                            <option value="119">Ch. 119</option>
+                                        </select>
+                                        <select id="mobile-bible-version" class="select-custom bible-tool-select" style="width:62px;">
+                                            <option value="KJV">KJV</option>
+                                        </select>
+                                    </div>
+                                    <input type="text" id="mobile-bible-search" class="form-control bible-search-input" placeholder="Search e.g. trust, salvation...">
+                                </div>
+
+                                <!-- Book page / reader -->
+                                <div id="mobile-bible-verses" class="bible-reader">
+                                    <!-- Chapter rendered as a book page by app.js -->
+                                </div>
+
+                                <!-- Reading plans -->
+                                <h4 class="bible-section-label">Reading Plans</h4>
+                                <div id="reading-plans" style="display:flex; flex-direction:column; gap:10px;"></div>
+                            </div>
+
+
+                            <!-- SCREEN SUBVIEW 4: DIRECT GIVING -->
+                            <div id="mobile-give" class="mobile-app-body" style="display:none;">
+                                <div class="mobile-header">
+                                    <h3>Digital Tithes & Giving</h3>
+                                    <span style="font-size:0.7rem; color:var(--text-secondary);">Pledges, giving history and secure transactions</span>
+                                </div>
+                                <div class="mobile-section-title">
+                                    <strong>Pledges &amp; Giving</strong>
+                                    <span>Your pledge promise, what you have given and your giving history</span>
+                                </div>
+                                <div id="mobile-pledge-panel" class="mobile-pledge-panel" style="margin-top:12px;">
+                                    <div class="card-glass" style="padding:12px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                                            <strong style="font-size:0.8rem; font-family:var(--font-header); color:var(--mob-text);">Contribute to My Pledge</strong>
+                                            <span id="mobile-pledge-state" class="category-pill category-pledge">Balance: Ksh 0</span>
+                                        </div>
+                                        <div id="mobile-pledge-summary" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:10px;">
+                                            <div style="font-size:0.62rem; color:var(--mob-sub);"><span>Promised</span><br><strong style="font-size:0.8rem; color:var(--mob-text);" id="mobile-pledge-amount">Ksh 0</strong></div>
+                                            <div style="font-size:0.62rem; color:var(--mob-sub);"><span>Contributed</span><br><strong style="font-size:0.8rem; color:var(--mob-text);" id="mobile-pledge-paid">Ksh 0</strong></div>
+                                            <div style="font-size:0.62rem; color:var(--mob-sub);"><span>Remaining</span><br><strong style="font-size:0.8rem; color:var(--mmc-gold);" id="mobile-pledge-remaining">Ksh 0</strong></div>
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:8px;">
+                                            <div>
+                                                <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Project you're pledging for</label>
+                                                <select id="mobile-pledge-project" class="select-custom" style="width:100%; font-size:0.75rem; padding:6px;"></select>
+                                            </div>
+                                            <div>
+                                                <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Amount you're contributing (Ksh)</label>
+                                                <input type="number" id="mobile-pledge-amount-input" class="form-control" min="1" step="1" placeholder="e.g. 2000" style="font-size:0.8rem;">
+                                            </div>
+                                            <div>
+                                                <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Payment method</label>
+                                                <select id="mobile-pledge-method" class="select-custom" style="width:100%; font-size:0.75rem; padding:6px;">
+                                                    <option>M-Pesa</option>
+                                                    <option>Card</option>
+                                                    <option>Bank Transfer</option>
+                                                    <option>Cash</option>
+                                                </select>
+                                            </div>
+                                            <button type="button" id="mobile-pledge-submit" class="btn btn-primary-gradient btn-sm" style="align-self:flex-start;" onclick="ChurchApp.submitMobilePledgeContribution()">Contribute to My Pledge</button>
+                                            <div id="mobile-pledge-hint" style="font-size:0.68rem; color:var(--accent-gold); min-height:0.95rem;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="mobile-financial-summary" class="giving-insights" style="margin-top:12px;"></div>
+                                <div id="mobile-giving-insights" class="giving-insights" style="margin-top:12px;"></div>
+                                <div class="mobile-section-title" style="margin-top:14px;">
+                                    <strong>Contribution Ledger</strong>
+                                    <span>Recent gifts, web format</span>
+                                </div>
+                                <div class="table-responsive" style="margin-top:0;">
+                                    <table class="financial-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Receipt</th>
+                                                <th>Member</th>
+                                                <th>Fund</th>
+                                                <th style="text-align:right;">Amount</th>
+                                                <th>Date</th>
+                                                <th>Channel</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="mobile-ledger-tbody"></tbody>
+                                    </table>
+                                </div>
+                                <div class="mobile-section-title" style="margin-top:14px;">
+                                    <strong>Make a Gift</strong>
+                                    <span>Secure transaction with automated receipt</span>
+                                </div>
+                                <form id="mobile-giving-form" style="display:flex; flex-direction:column; gap:10px;">
+                                    <div>
+                                        <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Select Branch</label>
+                                        <select id="mobile-giving-branch" class="select-custom" style="width:100%; font-size:0.75rem; padding:6px;"></select>
+                                    </div>
+                                    <div>
+                                        <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Giving On Behalf Of</label>
+                                        <input type="text" id="mobile-giving-onbehalf" class="form-control" list="mobile-giving-onbehalf-list" placeholder="Myself" style="width:100%; font-size:0.75rem; padding:6px 10px;">
+                                        <datalist id="mobile-giving-onbehalf-list"></datalist>
+                                    </div>
+                                    <div>
+                                        <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Select Fund / Project (your choice)</label>
+                                        <select id="mobile-giving-category" class="select-custom" style="width:100%; font-size:0.75rem; padding:6px;">
+                                            <option value="Tithe">Tithe Contribution</option>
+                                            <option value="Offering">General Offering</option>
+                                            <option value="Pledge">Pledge Target</option>
+                                            <option value="Project Donation">Project/Building Campaign</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Amount (Ksh)</label>
+                                        <div class="give-quick-chips" role="group" aria-label="Quick amounts">
+                                            <button type="button" class="give-chip" data-amount="200">200</button>
+                                            <button type="button" class="give-chip" data-amount="500">500</button>
+                                            <button type="button" class="give-chip" data-amount="1000">1,000</button>
+                                            <button type="button" class="give-chip" data-amount="5000">5,000</button>
+                                            <button type="button" class="give-chip" data-amount="custom">Custom</button>
+                                        </div>
+                                        <input type="number" step="1" min="1" id="mobile-giving-amount" class="form-control" style="font-size:0.75rem; padding:6px 10px;" required placeholder="0">
+                                    </div>
+                                    <div>
+                                        <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Payment Gateway</label>
+                                        <select id="mobile-giving-method" class="select-custom" style="width:100%; font-size:0.75rem; padding:6px;">
+                                            <option value="M-Pesa">M-Pesa</option>
+                                            <option value="Card">Card</option>
+                                            <option value="Bank Transfer">Bank Transfer</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Frequency</label>
+                                        <select id="mobile-giving-frequency" class="select-custom" style="width:100%; font-size:0.75rem; padding:6px;">
+                                            <option value="once">One-time gift</option>
+                                            <option value="weekly">Repeat weekly</option>
+                                            <option value="monthly">Repeat monthly</option>
+                                        </select>
+                                    </div>
+                                    <div id="mpesa-hint" class="mpesa-hint">
+                                        <span class="mpesa-badge">M-PESA</span>
+                                        <span>You'll get an STK prompt on your phone to confirm. Paybill <strong id="mpesa-paybill">-</strong>, account <strong id="mpesa-account">-</strong>.</span>
+                                    </div>
+                                    <label class="give-fees-row" id="cover-fees-row">
+                                        <input type="checkbox" id="mobile-giving-cover-fees">
+                                        <span>Add <span id="give-fees-amount">Ksh 0</span> to cover the card charge</span>
+                                    </label>
+                                    <button type="submit" class="mobile-rsvp-btn" style="padding:10px; font-size:0.75rem; margin-top:5px; border-radius:6px; font-weight:bold;">Process Stewardship Gift</button>
+                                </form>
+                                <div id="mobile-giving-success-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); display:none; justify-content:center; align-items:center; z-index:100;"></div>
+                            </div>
+
+                            <!-- SCREEN SUBVIEW 5: SERVE / VOLUNTEER -->
+                            <div id="mobile-serve" class="mobile-app-body" style="display:none;">
+                                <div class="mobile-header">
+                                    <h3>Volunteer Assignments</h3>
+                                    <span style="font-size:0.7rem; color:var(--text-secondary);">Apply to serve on upcoming events</span>
+                                </div>
+                                <h4 style="font-size:0.75rem; color:var(--mob-text); margin-bottom:8px;">My Serving Assignments</h4>
+                                <div id="mobile-my-assignments" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+                                    <!-- Populated dynamically -->
+                                </div>
+
+                                <hr style="border:0; border-top:1px solid var(--mob-border); margin:12px 0;">
+                                <h4 style="font-size:0.75rem; color:var(--mob-text); margin-bottom:8px;">Open Roles Rota</h4>
+                                <div id="mobile-open-serve-roles" style="display:flex; flex-direction:column; gap:8px;">
+                                    <!-- Populated dynamically -->
+                                </div>
+
+                                <hr style="border:0; border-top:1px solid var(--mob-border); margin:12px 0;">
+                                <h4 style="font-size:0.75rem; color:var(--mob-text); margin-bottom:8px;">My Voluntering Skills</h4>
+                                <div id="mobile-my-skills-list" style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px;"></div>
+                                
+                                <form id="volunteer-skills-signup-form" style="display:flex; gap:4px;">
+                                    <input type="text" id="new-skill-input" class="form-control" style="font-size:0.7rem; padding:6px;" placeholder="Add skill (e.g. Media, Tech)">
+                                    <button type="submit" class="mobile-rsvp-btn" style="font-size:0.7rem;">Add</button>
+                                </form>
+                            </div>
+
+                            <!-- SCREEN SUBVIEW 6: CHURCH PROJECTS -->
+                            <div id="mobile-projects" class="mobile-app-body" style="display:none;">
+                                <div class="mobile-header">
+                                    <h3>Church Projects</h3>
+                                    <span style="font-size:0.7rem; color:var(--text-secondary);">Give towards Tithes, Offerings, Pledges &amp; building funds</span>
+                                </div>
+                                <div id="mobile-projects-list" style="display:flex; flex-direction:column; gap:10px;">
+                                    <!-- Populated dynamically -->
+                                </div>
+                            </div>
+
+                            <!-- SCREEN SUBVIEW 7: VIRTUAL PASTOR CHAT -->
+                            <div id="mobile-chat" class="mobile-app-body" style="display:none; padding-bottom:52px;">
+                                <div class="mobile-header">
+                                    <h3>Pastoral AI Assistant</h3>
+                                    <span style="font-size:0.65rem; color:var(--text-secondary);">Available 24/7 for queries</span>
+                                </div>
+                                <div id="mobile-elder-contact"></div>
+                                <div class="mobile-chat-container">
+                                    <div class="chat-messages-area" id="mobile-chat-body"></div>
+                                    <div class="chat-input-row">
+                                        <input type="text" id="mobile-chat-input" class="form-control" style="font-size:0.75rem; padding:8px;" placeholder="Ask about services, giving, small groups...">
+                                        <button class="mobile-rsvp-btn" id="mobile-chat-send-btn">Send</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- SCREEN SUBVIEW 8: MEMBER PROFILE -->
+                            <div id="mobile-profile" class="mobile-app-body" style="display:none;">
+                                <div class="mobile-header">
+                                    <h3>My Profile</h3>
+                                    <span class="mobile-subtitle">Your church membership details</span>
+                                </div>
+                                <div class="mobile-profile-card">
+                                    <div class="mobile-profile-avatar" id="mobile-profile-avatar">JK</div>
+                                    <div class="mobile-profile-main">
+                                        <strong id="mobile-profile-name">John Kamau</strong>
+                                        <span id="mobile-profile-role">Member</span>
+                                        <span id="mobile-profile-branch">Nairobi CBD Branch</span>
+                                    </div>
+                                </div>
+                                <div class="mobile-profile-details">
+                                    <div class="mobile-profile-row"><span>Phone</span><strong id="mobile-profile-phone">&mdash;</strong></div>
+                                    <div class="mobile-profile-row"><span>Email</span><strong id="mobile-profile-email">&mdash;</strong></div>
+                                </div>
+                                <div id="mobile-pledge-section" class="mobile-pledge-section"></div>
+                                <div class="mobile-profile-menu">
+                                    <button type="button" onclick="ChurchApp.switchMobileView('projects')"><span>Church Projects</span><span class="mobile-menu-arrow">&rarr;</span></button>
+                                    <button type="button" onclick="ChurchApp.switchMobileView('serve')"><span>Serve Opportunities</span><span class="mobile-menu-arrow">&rarr;</span></button>
+                                    <button type="button" onclick="ChurchApp.switchMobileView('chat')"><span>AI Care Assistant</span><span class="mobile-menu-arrow">&rarr;</span></button>
+                                </div>
+                            </div>
+
+                            <div id="mobile-history" class="mobile-app-body" style="display:none;">
+                                <div class="mobile-header">
+                                    <h3>My Giving History</h3>
+                                    <span style="font-size:0.7rem; color:var(--text-secondary);">Every transaction made by your account</span>
+                                </div>
+                                <div class="mobile-section-title">
+                                    <strong>All Transactions</strong>
+                                    <span>Receipts, funds and amounts in the order you gave</span>
+                                </div>
+                                <div id="mobile-history-summary" class="mobile-history-summary"></div>
+                                <div id="mobile-history-list" class="mobile-history-list"></div>
+                            </div>
+
+                            <!-- Smartphone Navigation Bar Footer -->
+                            <div class="mobile-nav-bar">
+                                <button class="mobile-tab-btn active" onclick="ChurchApp.switchMobileView('home')" data-view="home">
+                                    <svg class="mtab-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11l8.5-6.5 8.5 6.5"/><path d="M6 9.6V20h12V9.6"/></svg>
+                                    <span>Home</span>
+                                </button>
+                                <button class="mobile-tab-btn" onclick="ChurchApp.switchMobileView('sermons')" data-view="sermons">
+                                    <svg class="mtab-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.4"/><path d="M10 9l5 3-5 3z"/></svg>
+                                    <span>Sermons</span>
+                                </button>
+                                <button class="mobile-tab-btn" onclick="ChurchApp.switchMobileView('bible')" data-view="bible">
+                                    <svg class="mtab-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.4A2.4 2.4 0 0 1 6.4 3H20v14H6.4A2.4 2.4 0 0 0 4 19.4z"/><path d="M4 5.4v14"/></svg>
+                                    <span>Scripture</span>
+                                </button>
+                                <button class="mobile-tab-btn" onclick="ChurchApp.switchMobileView('give')" data-view="give">
+                                    <svg class="mtab-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5S3.5 15.8 3.5 9.9c0-2.8 2-4.4 4.1-4.4 1.7 0 3.3 1 4.4 2.6C13.1 6.5 14.7 5.5 16.4 5.5c2.1 0 4.1 1.6 4.1 4.4 0 5.9-8.5 10.6-8.5 10.6z"/></svg>
+                                    <span>Giving</span>
+                                </button>
+                                <button class="mobile-tab-btn" onclick="ChurchApp.switchMobileView('history')" data-view="history">
+                                    <svg class="mtab-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.5V12l3 1.8"/></svg>
+                                    <span>History</span>
+                                </button>
+                                <button class="mobile-tab-btn" onclick="ChurchApp.switchMobileView('profile')" data-view="profile">
+                                    <svg class="mtab-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.2" r="3.6"/><path d="M4.8 19.6c0-3.2 2.8-5.4 7.2-5.4s7.2 2.2 7.2 5.4"/></svg>
+                                    <span>Profile</span>
+                                </button>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+            <!-- Floating AI chatbot launcher (robotic black, bottom-right) -->
+        <button id="ai-chat-launcher" class="ai-chat-launcher" aria-label="Chat with the AI assistant" title="Ask the AI assistant" onclick="ChurchApp.toggleAiHelp()">
+            <svg class="ai-robot" viewBox="0 0 64 64" aria-hidden="true">
+            <defs>
+            <linearGradient id="aiRb" x1="32" y1="16" x2="32" y2="50" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#31363f"/>
+            <stop offset="1" stop-color="#10131a"/>
+            </linearGradient>
+            </defs>
+            <line x1="32" y1="8" x2="32" y2="15" stroke="#22d3ee" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="32" cy="6.5" r="3" fill="#22d3ee"/>
+            <rect x="14" y="17" width="36" height="30" rx="9" fill="url(#aiRb)" stroke="#22d3ee" stroke-width="2"/>
+            <rect x="7" y="26" width="7" height="12" rx="3" fill="#1b1e26"/>
+            <rect x="50" y="26" width="7" height="12" rx="3" fill="#1b1e26"/>
+            <circle cx="10.5" cy="32" r="1.8" fill="#22d3ee" opacity="0.8"/>
+            <circle cx="53.5" cy="32" r="1.8" fill="#22d3ee" opacity="0.8"/>
+            <rect x="22" y="25" width="8" height="9" rx="2.5" fill="#22d3ee"/>
+            <rect x="34" y="25" width="8" height="9" rx="2.5" fill="#22d3ee"/>
+            <rect x="24" y="39" width="16" height="5" rx="2" fill="#22d3ee" opacity="0.9"/>
+            </svg>
+            <span class="ai-launcher-badge" aria-hidden="true"></span>
+        </button>
+    </div>
+
+    <!-- Modals Layout Frame -->
+    
+    <!-- 1. Member Profile Modal -->
+    <div id="member-detail-modal" class="modal-overlay"></div>
+    <div id="staff-edit-modal" class="modal-overlay"></div>
+    <div id="group-edit-modal" class="modal-overlay"></div>   
+
+    <!-- 2. AI Matcher Modal -->
+    <div id="ai-matcher-modal" class="modal-overlay"></div>
+
+    <!-- 3. Stewardship Receipt Modal -->
+    <div id="receipt-modal" class="modal-overlay"></div>
+
+    <!-- 4. AI Software Assistant Modal -->
+    <div id="ai-help-modal" class="modal-overlay"></div>
+
+    <!-- JS Core Engine Scripts -->
+    <!-- Brand config first: defines window.MMC_BRAND and window.money(). -->
+    <script src="js/brand.js?v=5"></script>
+    <script src="js/config.js?v=5"></script>
+    <script src="js/api.js?v=6"></script>
+    <script src="ai-engine.js?v=12"></script>
+    <script src="app.js?v=28"></script>
+</body>
+</html>

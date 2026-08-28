@@ -1,0 +1,65 @@
+# Church 2.0 - Contabo VPS stack: API + PostgreSQL + nginx (TLS).
+# Usage (on the Contabo host):
+#   cp .env.example .env   # fill in secrets
+#   docker compose up -d --build
+#   docker compose exec api node src/db/seed.js   # first-time seed only
+#
+# nginx terminates TLS with certs from certbot (see DEPLOY.md) and proxies
+# /api to the API container. The static frontend is served by Vercel, so this
+# host only needs to expose the API over HTTPS.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PGUSER:-church2}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?set PGPASSWORD in .env}
+      POSTGRES_DB: ${PGDATABASE:-church2}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-church2} -d ${PGDATABASE:-church2}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Not published to the host - only reachable by the api service.
+    expose:
+      - "5432"
+
+  api:
+    build: ../server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "4000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+
+  # One-shot / cron container to obtain & renew Let's Encrypt certificates.
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done'"
+
+volumes:
+  pgdata:

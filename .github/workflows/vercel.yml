@@ -1,0 +1,89 @@
+name: Vercel Deploy
+
+# Deploys the static frontend to Vercel. Everything the deploy needs is already
+# in the repo (vercel.json publishes the root as static; .vercelignore excludes
+# server/ and deploy/), so the only setup is one repository secret:
+#
+#   VERCEL_TOKEN  - https://vercel.com/account/tokens
+#
+# Optional, and only needed to deploy into an existing Vercel project rather
+# than letting the CLI create one:
+#
+#   VERCEL_ORG_ID, VERCEL_PROJECT_ID  - from .vercel/project.json after `vercel link`
+#
+# Pushes to main deploy to production; pushes to any other branch produce a
+# preview URL. Without the token the job skips instead of failing, so the repo
+# stays green for anyone who hasn't connected Vercel.
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for Vercel token
+        id: guard
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "No VERCEL_TOKEN secret set - skipping deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.guard.outputs.ready == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: steps.guard.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Don't ship a broken demo: the same suite the CI pipeline runs.
+      - name: Run test suite
+        if: steps.guard.outputs.ready == 'true'
+        run: npm test
+
+      - name: Deploy
+        if: steps.guard.outputs.ready == 'true'
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TARGET="--prod"
+          else
+            TARGET=""
+          fi
+          URL=$(npx --yes vercel@latest deploy $TARGET --yes --token "$VERCEL_TOKEN")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $URL"
+
+      - name: Summary
+        if: steps.guard.outputs.ready == 'true'
+        run: |
+          {
+            echo "### Vercel deploy"
+            echo ""
+            echo "**${{ steps.deploy.outputs.url }}**"
+            echo ""
+            echo "Sign in with \`admin@maximummiracle.org\` / \`grace\`, MFA code \`123456\`."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Maximum Miracle Centre">
+  <defs>
+    <linearGradient id="mmcField" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1d4ed8"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </linearGradient>
+    <linearGradient id="mmcGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7cd5a"/>
+      <stop offset="1" stop-color="#c8890f"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#mmcField)"/>
+
+  <!-- Radiating light behind the cross: the "miracle" burst. -->
+  <g stroke="#f0b429" stroke-linecap="round" opacity="0.42">
+    <path d="M256 78v34" stroke-width="14"/>
+    <path d="M154 120l20 28" stroke-width="12"/>
+    <path d="M358 120l-20 28" stroke-width="12"/>
+    <path d="M96 222l32 10" stroke-width="12"/>
+    <path d="M416 222l-32 10" stroke-width="12"/>
+  </g>
+
+  <!-- Cross -->
+  <path d="M256 128v268M170 218h172" stroke="url(#mmcGold)" stroke-width="46" stroke-linecap="round" fill="none"/>
+
+  <!-- Open-hands / gathering arc beneath: the congregation. -->
+  <path d="M136 400c34-46 76-69 120-69s86 23 120 69" stroke="#ffffff" stroke-width="26" stroke-linecap="round" fill="none" opacity="0.92"/>
+</svg>

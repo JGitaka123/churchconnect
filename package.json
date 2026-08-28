@@ -1,0 +1,19 @@
+{
+  "name": "church2-platform",
+  "version": "1.0.0",
+  "description": "Unified Multi-Branch Church Management Platform with AI-Driven Ministry Intelligence",
+  "main": "app.js",
+  "scripts": {
+    "test": "node test.js",
+    "start": "npx http-server"
+  },
+  "keywords": [
+    "church",
+    "management",
+    "ai",
+    "ministry",
+    "multi-branch"
+  ],
+  "author": "Church 2.0 Development Team",
+  "license": "MIT"
+}
