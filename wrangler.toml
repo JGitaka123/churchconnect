@@ -14,6 +14,6 @@ pages_build_output_dir = "./dist"
 # Recent compatibility date: enables the Node.js compatibility layer used by
 # functions/api/[[path]].js (cloudflare:node HTTP server modules auto-enable
 # for dates >= 2025-09-01; nodejs_compat_v2 auto-enables for >= 2026-08-04).
-# The explicit flags below are harmless and keep the config self-documenting.
+# Wrangler v4 requires a single flag; nodejs_compat_v2 is the current layer.
 compatibility_date = "2026-08-19"
-compatibility_flags = ["nodejs_compat", "nodejs_compat_v2"]
+compatibility_flags = ["nodejs_compat_v2"]
