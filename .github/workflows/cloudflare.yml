@@ -1,9 +1,9 @@
 name: Cloudflare Pages Deploy
 
 # Builds the SPA with scripts/build-cf.mjs and deploys dist/ to Cloudflare
-# Pages, with the Express API running in Pages Functions (functions/api).
-# Everything the deploy needs is in the repo; the only setup is two repository
-# secrets:
+# Pages, with the Express API bundled into dist/_worker.js (Pages advanced
+# mode). Everything the deploy needs is in the repo; the only setup is two
+# repository secrets:
 #
 #   CLOUDFLARE_API_TOKEN  - API token with Pages:Edit permission (My Profile ->
 #                           API Tokens -> Create Token -> "Edit Cloudflare
@@ -57,8 +57,14 @@ jobs:
         with:
           node-version: '20'
 
-      # Server deps include @neondatabase/serverless, which wrangler bundles
-      # into the Pages Functions build for the API.
+      # Root deps (esbuild + wrangler) drive the SPA build and the Worker
+      # bundle - npm run build fails without them.
+      - name: Install root dependencies
+        if: steps.guard.outputs.ready == 'true'
+        run: npm ci
+
+      # Server deps include @neondatabase/serverless, which esbuild bundles
+      # into dist/_worker.js for the API.
       - name: Install server dependencies
         if: steps.guard.outputs.ready == 'true'
         working-directory: server

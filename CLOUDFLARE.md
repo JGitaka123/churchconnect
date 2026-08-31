@@ -5,11 +5,11 @@ ChurchConnect deploys as a single Cloudflare Pages project:
 - **Static SPA** - `index.html`, `app.js`, `styles.css`, `js/`, `vendor/` and
   `icons/` are assembled into `dist/` by `scripts/build-cf.mjs` and served by
   Pages' global CDN.
-- **API** - the Express backend (`server/src/app.js`) runs inside Pages
-  Functions via `functions/api/[[path]].js`, mounted under `/api/*`. It talks
-  to a Neon Postgres database using `@neondatabase/serverless`, a drop-in
-  `pg` replacement that connects over WebSockets (Workers cannot open raw
-  TCP sockets).
+- **API** - the Express backend (`server/src/app.js`) is bundled into
+  `dist/_worker.js` by `scripts/build-cf.mjs` (Pages advanced mode) and
+  mounted under `/api/*`. It talks to a Neon Postgres database using
+  `@neondatabase/serverless`, a drop-in `pg` replacement that connects over
+  WebSockets (Workers cannot open raw TCP sockets).
 
 SPA and API share one origin (`https://churchconnect.pages.dev`), so there is
 no CORS setup: the build script injects
@@ -52,7 +52,7 @@ The repo ships `wrangler.toml` with:
 name = "churchconnect"
 pages_build_output_dir = "./dist"
 compatibility_date = "2026-08-19"
-compatibility_flags = ["nodejs_compat", "nodejs_compat_v2"]
+compatibility_flags = ["nodejs_compat_v2"]
 ```
 
 Create the project (or let the GitHub Action create it on the first deploy):
@@ -63,7 +63,7 @@ npx wrangler@4 pages project create churchconnect --production-branch main
 
 Requires wrangler >= 3.45.0 (the V2 build system that reads
 `pages_build_output_dir`). The compatibility settings enable the Node.js HTTP
-server modules used by the Functions entry.
+server modules used by the prebuilt `_worker.js` entry.
 
 ## 3. Set the Pages environment variables
 
@@ -107,7 +107,7 @@ echo "postgresql://..." | npx wrangler@4 pages secret put DATABASE_URL --project
    - `CLOUDFLARE_ACCOUNT_ID` - your account ID (dashboard right rail, or
      `npx wrangler whoami`).
 3. Push to `main`. `.github/workflows/cloudflare.yml` runs
-   `npm ci` (server), `npm test`, `npm run build`, then
+   `npm ci` (root + server), `npm test`, `npm run build`, then
    `wrangler pages deploy`. If the secrets are missing the job skips cleanly.
 
 ## 5. Verify

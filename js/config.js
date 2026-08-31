@@ -23,6 +23,17 @@
     window.location.replace('http://localhost:4000');
   } else if (loc.protocol === 'http:' && isLocalHost && loc.port !== '4000') {
     window.location.replace(loc.protocol + '//' + loc.hostname + ':4000');
+  } else if (
+    loc.protocol === 'http:' &&
+    loc.port !== '4000' &&
+    typeof document !== 'undefined' &&
+    document.querySelector &&
+    !document.querySelector('meta[name="church-api"][content="same-origin"]')
+  ) {
+    // LAN IP / phone access on the static server (e.g. 192.168.x.x:8080):
+    // bounce to the backend on port 4000, which serves the app and the API
+    // same-origin. Deployed pages carry the church-api marker and are skipped.
+    window.location.replace(loc.protocol + '//' + loc.hostname + ':4000');
   }
 })();
 

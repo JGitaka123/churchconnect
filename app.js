@@ -845,13 +845,13 @@ const ChurchApp = {
         }
 
         // Production is backend-only - there are no local accounts.
-        if (err) err.textContent = 'Live backend required - start the API server (npm run dev) and reload.';
+        if (err) err.textContent = 'Backend not connected - open http://localhost:4000 (or run START-APP.bat) to sign in.';
     },
 
     handleRegister() {
         const err = document.getElementById('auth-error');
         if (!this.apiEnabled()) {
-            if (err) err.textContent = 'Registration needs the backend. Configure the API base URL first.';
+            if (err) err.textContent = 'Backend not connected - open http://localhost:4000 (or run START-APP.bat) to register.';
             return;
         }
         const name = (document.getElementById('reg-name').value || '').trim();
