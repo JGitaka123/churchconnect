@@ -58,7 +58,7 @@ compatibility_flags = ["nodejs_compat", "nodejs_compat_v2"]
 Create the project (or let the GitHub Action create it on the first deploy):
 
 ```powershell
-npx wrangler@3 pages project create churchconnect --production-branch main
+npx wrangler@4 pages project create churchconnect --production-branch main
 ```
 
 Requires wrangler >= 3.45.0 (the V2 build system that reads
@@ -92,7 +92,7 @@ use the secret type for anything sensitive (`DATABASE_URL`, `JWT_SECRET`,
 CLI alternative (production environment):
 
 ```powershell
-echo "postgresql://..." | npx wrangler@3 pages secret put DATABASE_URL --project-name churchconnect
+echo "postgresql://..." | npx wrangler@4 pages secret put DATABASE_URL --project-name churchconnect
 ```
 
 > MFA codes: in production the app fails closed when no email/SMS provider is
@@ -126,7 +126,7 @@ point DNS at Cloudflare. Update `CORS_ORIGINS` to the custom domain afterwards.
 
 ```powershell
 npm run build                     # writes dist/ (SPA + Pages config)
-npx wrangler@3 pages dev dist     # local preview including Functions
+npx wrangler@4 pages dev dist     # local preview including Functions
 ```
 
 ## Notes and limits

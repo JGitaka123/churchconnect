@@ -24,3 +24,5 @@ package-lock.json.corrupt
 
 # Cloudflare Pages build output
 dist/
+# Local node_modules (root npm install)
+node_modules/

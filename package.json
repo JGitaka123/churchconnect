@@ -16,5 +16,8 @@
     "multi-branch"
   ],
   "author": "Church 2.0 Development Team",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^4.127.1"
+  }
 }
