@@ -11,7 +11,12 @@
 // the handler to app.listen(4000) - it is not a real network port.
 
 import { httpServerHandler } from "cloudflare:node";
-import app from "./app.js";
+import app, { setSchemaGuard } from "./app.js";
+import { ensureMigrated } from "./db/auto-migrate.js";
+
+// Apply the schema + core seed once on the first request so a fresh or stale
+// Neon database self-heals (idempotent; see server/src/db/schema.sql).
+setSchemaGuard(ensureMigrated);
 
 // Bind the Express app to the same logical port the handler serves.
 app.listen(4000);

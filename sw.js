@@ -5,7 +5,7 @@
 //   - Page navigations: network-first, falling back to the cached app shell.
 //   - Static assets: cache-first with a background refresh (stale-while-
 //     revalidate). Versioned URLs (?v=...) get fresh cache entries for free.
-const CACHE_NAME = 'mmc-console-v4';
+const CACHE_NAME = 'mmc-console-v5';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

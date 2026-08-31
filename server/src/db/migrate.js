@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { pool } from './pool.js';
+import { CORE_SEED_SQL } from './coreSeed.js';
 
 // Applies schema.sql. The schema is idempotent (IF NOT EXISTS), so this doubles
 // as a simple migration runner - safe to run on every deploy.
@@ -56,6 +57,8 @@ export async function migrate() {
   await pool.query(sql);
   console.log('Schema applied');
   await seedMultiTenantDemo();
+  await pool.query(CORE_SEED_SQL);
+  console.log('Core ch1 dataset ensured');
 }
 
 // Allow `npm run migrate`

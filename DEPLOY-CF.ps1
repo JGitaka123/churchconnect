@@ -83,7 +83,11 @@ $db = $db.Trim().Trim('"')
 if ([string]::IsNullOrWhiteSpace($db)) { throw 'The connection string was empty after cleaning - re-run and paste it again.' }
 if ($db -notmatch '^postgres(ql)?://') { throw 'That does not look like a Postgres connection string (it must start with postgresql://) - re-run and paste the Neon string exactly as shown.' }
 
-$jwt = Read-Host "JWT secret (press Enter to auto-generate one)"
+$serverEnv = Join-Path $PSScriptRoot 'server\.env'
+$jwt = Read-Host "JWT secret (press Enter to reuse the one in server\.env, or auto-generate)"
+if ([string]::IsNullOrWhiteSpace($jwt)) {
+  $jwt = Read-EnvValue $serverEnv 'JWT_SECRET'
+}
 if ([string]::IsNullOrWhiteSpace($jwt)) {
   $jwt = (& node -e "console.log(require('crypto').randomBytes(48).toString('hex'))").Trim()
 }
@@ -100,7 +104,6 @@ $secrets = [ordered]@{
 # Pull the email/SMS delivery secrets from server\.env so MFA and password
 # reset codes actually send after deployment (production fails closed without
 # them). Values are optional - only configured channels are uploaded.
-$serverEnv = Join-Path $PSScriptRoot 'server\.env'
 $emailKey = Read-EnvValue $serverEnv 'EMAIL_API_KEY'
 $emailFrom = Read-EnvValue $serverEnv 'EMAIL_FROM'
 $emailFromName = Read-EnvValue $serverEnv 'EMAIL_FROM_NAME'
@@ -113,11 +116,13 @@ if ($emailFromName) { $secrets['EMAIL_FROM_NAME'] = $emailFromName }
 if ($smsUsername) { $secrets['SMS_USERNAME'] = $smsUsername }
 if ($smsApiKey) { $secrets['SMS_API_KEY'] = $smsApiKey }
 if ($smsFrom) { $secrets['SMS_FROM'] = $smsFrom }
-if (-not $emailKey -and -not $smsUsername -and -not $smsApiKey) {
+$deepseekKey = Read-EnvValue $serverEnv 'DEEPSEEK_API_KEY'
+if ($deepseekKey) { $secrets['DEEPSEEK_API_KEY'] = $deepseekKey }
+if (-not $emailKey -and -not $smsUsername -and -not $smsApiKey -and -not $deepseekKey) {
   Write-Host ""
-  Write-Host "  NOTE: no EMAIL_API_KEY / SMS_API_KEY found in server\.env - MFA and"
-  Write-Host "        password-reset codes will NOT be deliverable in production until"
-  Write-Host "        you add one (see server\.env.example)."
+  Write-Host "  NOTE: no EMAIL_API_KEY / SMS_API_KEY / DEEPSEEK_API_KEY found in server\.env -"
+  Write-Host "        MFA codes and the AI assistant will not work in production until you"
+  Write-Host "        add them (see server\.env.example)."
 }
 
 $tmp = Join-Path $env:TEMP ("cf-secrets-" + [guid]::NewGuid().ToString('N') + '.json')

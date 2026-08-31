@@ -41,7 +41,7 @@ v1AuthRouter.post('/login', async (req, res, next) => {
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
     const { rows } = await query(
-      'SELECT id, email, name, role, branch_id, church_id, phone, mfa_enabled, mfa_required, password_hash, login_attempts, locked_until, active, totp_secret, recovery_codes FROM users WHERE email = $1',
+      'SELECT id, email, name, role, branch_id, church_id, phone, mfa_enabled, mfa_required, mfa_exempt, password_hash, login_attempts, locked_until, active, totp_secret, recovery_codes FROM users WHERE email = $1',
       [String(email).toLowerCase()]
     );
     const user = rows[0];

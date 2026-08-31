@@ -90,6 +90,9 @@ await esbuild({
   platform: 'neutral',
   mainFields: ['module', 'main'],
   target: 'es2022',
+  // Bundle schema.sql as a plain string so the Worker can run the idempotent
+  // schema + core seed on first request (see server/src/db/auto-migrate.js).
+  loader: { '.sql': 'text' },
   // Node builtins stay external: the Workers runtime provides them under
   // nodejs_compat_v2 (wrangler.toml). With platform 'neutral' esbuild does not
   // auto-externalize them, so list both the node: prefixed and legacy names to

@@ -301,6 +301,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_codes TEXT[] NOT NULL DEFAUL
 -- System-enforced MFA for privileged accounts regardless of user preference.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_required BOOLEAN NOT NULL DEFAULT false;
 
+-- Rescue flag: allows an account to sign in without MFA. Only set by the
+-- reset-admin script so a misconfigured email/SMS provider can never lock
+-- the admin out permanently; re-enabling MFA in Settings clears it.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_exempt BOOLEAN NOT NULL DEFAULT false;
+
 -- Revocable server-side sessions. Every access token carries a session id so
 -- the backend can kill a device remotely and keep a last-seen trail per login.
 CREATE TABLE IF NOT EXISTS sessions (

@@ -48,6 +48,16 @@ function lazyRateLimit(options) {
   };
 }
 
+// Lazy one-time schema guard for the Cloudflare Worker. pages-entry.js injects
+// ensureMigrated() so a fresh/stale Neon DB self-heals on the first request;
+// the local dev server leaves this a no-op. Failures are logged and the
+// request continues so the API never hides real DB errors behind this.
+let schemaGuard = async () => {};
+export function setSchemaGuard(fn) { schemaGuard = fn || (async () => {}); }
+app.use('/api/', async (req, res, next) => {
+  try { await schemaGuard(); } catch (e) { console.error('Schema guard failed:', e && e.message); }
+  next();
+});
 app.use('/api/', lazyRateLimit({ windowMs: 60_000, max: 300 }));
 const authLimiter = lazyRateLimit({ windowMs: 15 * 60_000, max: 30 });
 // Credential-stuffing throttle: per-IP cap on password attempts, layered on top

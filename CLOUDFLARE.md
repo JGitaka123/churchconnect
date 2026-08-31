@@ -21,6 +21,13 @@ no CORS setup: the build script injects
 `<meta name="church-api" content="same-origin">` into `dist/index.html`, and
 `js/config.js` uses that marker to point API calls at `window.location.origin`.
 
+
+> **Fresh/stale database self-heals:** the deployed Worker runs the schema + a
+> small core dataset (church, campuses, admin accounts, members) once on the first
+> request. It is idempotent (`IF NOT EXISTS` / `ON CONFLICT DO NOTHING`), so you do
+> not need to migrate the Neon database manually before the first deploy - just set
+> `DATABASE_URL` as a secret below.
+
 ## What you need
 
 - The GitHub repository with this code (push to `main` to deploy).
@@ -48,6 +55,20 @@ no CORS setup: the build script injects
    `migrate.js` is idempotent (`IF NOT EXISTS`), so it is safe to re-run.
    `seed.js` creates the demo accounts (password from `SEED_PASSWORD`, default
    `grace`).
+
+
+> **Stuck at login?** Run the one-command admin reset from the `server`
+> folder (uses the schema + core seed first, then turns MFA off for the
+> admin so you can get in even before email/SMS delivery is configured):
+
+> ```powershell
+> cd server
+> $env:DATABASE_URL = "postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require"
+> $env:DB_DRIVER = "neon"
+> npm run reset-admin
+> ```
+
+> It prints the email and password to use (default `admin@maximummiracle.org` / `grace`).
 
 ## 2. Create the Pages project (one time)
 
@@ -100,11 +121,11 @@ CLI alternative (production environment):
 echo "postgresql://..." | npx wrangler@4 pages secret put DATABASE_URL --project-name churchconnect
 ```
 
-> MFA codes: in production the app fails closed when no email/SMS provider is
-> configured, so configure `EMAIL_API_KEY` (or SMS) before relying on login.
-
-## 4. Connect GitHub
-
+> Delivery + AI secrets: `DEPLOY-CF.ps1` reads `server/.env` and uploads
+> `EMAIL_API_KEY`, `EMAIL_FROM`, `SMS_*` and `DEEPSEEK_API_KEY` automatically on
+> every deploy. In production the app fails closed when no email/SMS provider is
+> configured, so set `EMAIL_API_KEY` (or SMS) before relying on login; the AI
+> assistant needs `DEEPSEEK_API_KEY`.
 1. Push this repo to GitHub.
 2. Add repository secrets (Settings -> Secrets and variables -> Actions):
    - `CLOUDFLARE_API_TOKEN` - My Profile -> API Tokens -> Create Token ->

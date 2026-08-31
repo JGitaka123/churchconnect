@@ -12,14 +12,17 @@ import { verifyCodeHash, verifyTotp, verifyRecoveryCode, MAX_ATTEMPTS } from './
 export { isPrivilegedRole };
 
 // Whether the account must complete an MFA step before a token is issued.
-export const mfaNeeded = (user) =>
-  Boolean(
+export const mfaNeeded = (user) => {
+  // rescue flag (set by npm run reset-admin) lets the account in without MFA
+  if (user && user.mfa_exempt) return false;
+  return Boolean(
     user.mfa_enabled ||
     user.mfa_required ||
     isPrivilegedRole(user.role) ||
     user.totp_secret ||
     (Array.isArray(user.recovery_codes) && user.recovery_codes.length)
   );
+};
 
 // Short-lived ticket issued after the password step; exchanged for an access
 // token after MFA succeeds. jti lets callers throttle brute-force attempts.

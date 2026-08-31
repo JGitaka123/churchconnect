@@ -54,7 +54,7 @@ router.post('/login', async (req, res, next) => {
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
     const { rows } = await query(
-      `SELECT id, email, name, role, branch_id, church_id, phone, mfa_enabled, mfa_required,
+      `SELECT id, email, name, role, branch_id, church_id, phone, mfa_enabled, mfa_required, mfa_exempt,
               password_hash, login_attempts, locked_until, active, totp_secret, recovery_codes
        FROM users WHERE email = $1`,
       [String(email).toLowerCase()]
@@ -353,10 +353,10 @@ router.post('/mfa/settings', authenticate, async (req, res, next) => {
     if (typeof phone === 'string') {
       const p = phone.trim();
       if (!p) return res.status(400).json({ error: 'Phone cannot be empty' });
-      sql = 'UPDATE users SET phone = $1, mfa_enabled = $2 WHERE id = $3';
+      sql = 'UPDATE users SET phone = $1, mfa_enabled = $2, mfa_exempt = NOT $2 WHERE id = $3';
       params = [p, enabled, req.user.sub];
     } else {
-      sql = 'UPDATE users SET mfa_enabled = $1 WHERE id = $2';
+      sql = 'UPDATE users SET mfa_enabled = $1, mfa_exempt = NOT $1 WHERE id = $2';
       params = [enabled, req.user.sub];
     }
     await query(sql, params);
