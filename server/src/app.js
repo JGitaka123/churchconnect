@@ -36,11 +36,23 @@ app.use(
 );
 
 // Basic rate limiting; stricter on auth.
-app.use('/api/', rateLimit({ windowMs: 60_000, max: 300 }));
-const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 30 });
+//
+// Limiters are created lazily on the first request instead of at module load:
+// express-rate-limit's default MemoryStore starts a setInterval in its
+// constructor, and Cloudflare Workers forbid timers at module (global) scope.
+function lazyRateLimit(options) {
+  let limiter;
+  return (req, res, next) => {
+    limiter = limiter || rateLimit(options);
+    limiter(req, res, next);
+  };
+}
+
+app.use('/api/', lazyRateLimit({ windowMs: 60_000, max: 300 }));
+const authLimiter = lazyRateLimit({ windowMs: 15 * 60_000, max: 30 });
 // Credential-stuffing throttle: per-IP cap on password attempts, layered on top
 // of the per-account lockout enforced in the login handler itself.
-const loginLimiter = rateLimit({ windowMs: 15 * 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
+const loginLimiter = lazyRateLimit({ windowMs: 15 * 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
 
 // Health check (used by Docker/uptime probes).
 app.get('/api/health', async (_req, res) => {
