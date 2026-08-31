@@ -1672,6 +1672,17 @@ const ChurchApp = {
         }
         const activeTab = this.session.activeTab;
 
+        // Real-phone hooks: flag when the member app is on screen and when the
+        // signed-in account is a real member, so CSS can go full-screen and
+        // immersive on phones. The real role (not a simulated preview role) is
+        // used so an admin previewing the member app keeps the console chrome.
+        const appRoot = document.getElementById('app-container');
+        if (appRoot) {
+            appRoot.classList.toggle('mode-mobile', activeTab === 'mobile_preview');
+            const realRole = (this.session.currentUser && this.session.currentUser.role) || role;
+            appRoot.classList.toggle('mode-member', realRole === 'member');
+        }
+
         // Sync header displays. "global" is a valid selection (All Branches) that
         // has no matching branch record, so fall back to a friendly label instead
         // of dereferencing undefined and aborting the entire render.
