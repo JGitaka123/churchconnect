@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import { query } from './db/pool.js';
 import { config } from './config.js';
 
+import './bcrypt-random.js';
+
 export const hashPassword = (plain) => bcrypt.hash(plain, config.bcryptRounds);
 export const verifyPassword = (plain, hash) => bcrypt.compare(plain, hash);
 

@@ -1,12 +1,13 @@
 // Church 2.0 - runtime configuration.
 //
 // apiBase: base URL of the backend API.
-//   - Defaults to the local dev backend (http://localhost:4000).
-//   - For production, point this at your real API origin (e.g.
-//     "https://api.yourchurch.org") before deploying.
-//   - You can override at runtime without editing this file by setting
-//     localStorage 'church2_api_base' in the browser console:
-//       localStorage.setItem('church2_api_base', 'http://localhost:4000')
+//   - Local dev: defaults to the local backend (http://localhost:4000).
+//   - Deployed (Cloudflare Pages or any https site): defaults to THIS page's
+//     own origin, because the API runs on the same domain
+//     (https://your-site.pages.dev/api/...). There is no hardcoded live URL.
+//   - Optional runtime override via localStorage 'church2_api_base' in the
+//     browser console; a localhost override is ignored unless the page is
+//     actually open on localhost.
 // The backend serves BOTH the app and the API. If someone opens the old
 // http-server port (8080), cross-origin fetch can be blocked by the browser,
 // so bounce them to the real app URL (port 4000) automatically.
@@ -54,11 +55,20 @@ const API_BASE_DEFAULT = (function () {
   }
   // Local http-server on 8080 -> explicit cross-origin base.
   if (window.location.protocol === 'http:' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) return 'http://localhost:4000';
-  // https (deployed) or LAN access -> never call a visitor's localhost; use
-  // localStorage 'church2_api_base' to point at the real API instead.
-  return '';
+  // Deployed (https) or LAN access -> the API is served on the same origin
+  // as this page (Cloudflare Pages worker or the backend). Never point at a
+  // visitor's localhost.
+  return window.location.origin;
 })();
 
+// A saved override that points at localhost must only apply while the page is
+// actually open on localhost. On the live site it would send every API call
+// to a visitor's own computer, so it is ignored there.
+let apiOverride = (typeof localStorage !== 'undefined' && localStorage.getItem('church2_api_base')) || '';
+if (apiOverride && typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)([:/]|$)/.test(apiOverride)) apiOverride = '';
+}
+
 window.CHURCH2_CONFIG = {
-  apiBase: (typeof localStorage !== 'undefined' && localStorage.getItem('church2_api_base')) || API_BASE_DEFAULT,
+  apiBase: apiOverride || API_BASE_DEFAULT,
 };

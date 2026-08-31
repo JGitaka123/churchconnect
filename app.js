@@ -657,7 +657,7 @@ const ChurchApp = {
                     </form>
                     ${apiMode ? '' : `
                     <div class="auth-demo" role="status">
-                        <span>Live backend required. Start the API server (npm run dev) and reload this page.</span>
+                        <span>Backend not connected yet. On your computer run npm run dev (or START-APP.bat). On the live site, wait a minute and reload.</span>
                     </div>
                     `}
                 </section>
@@ -845,13 +845,13 @@ const ChurchApp = {
         }
 
         // Production is backend-only - there are no local accounts.
-        if (err) err.textContent = 'Backend not connected - open http://localhost:4000 (or run START-APP.bat) to sign in.';
+        if (err) err.textContent = 'Backend not connected. On your computer run npm run dev (or START-APP.bat); on the live site wait a minute and reload.';
     },
 
     handleRegister() {
         const err = document.getElementById('auth-error');
         if (!this.apiEnabled()) {
-            if (err) err.textContent = 'Backend not connected - open http://localhost:4000 (or run START-APP.bat) to register.';
+            if (err) err.textContent = 'Backend not connected. On your computer run npm run dev (or START-APP.bat); on the live site wait a minute and reload.';
             return;
         }
         const name = (document.getElementById('reg-name').value || '').trim();
@@ -878,7 +878,7 @@ const ChurchApp = {
         const status = document.getElementById('mfa-status');
         const err = document.getElementById('auth-error');
         if (!this.apiEnabled()) {
-            if (status) status.textContent = 'Live backend required - start the API server and reload.';
+            if (status) status.textContent = 'Backend not connected yet - on your computer run npm run dev, or wait a minute on the live site and reload.';
             return;
         }
         const m = method || (ctx && ctx.method) || 'email';
@@ -909,14 +909,14 @@ const ChurchApp = {
         }
 
         // Production is backend-only - there is no demo code path.
-        if (err) err.textContent = 'Live backend required - start the API server and reload.';
+        if (err) err.textContent = 'Backend not connected yet - on your computer run npm run dev, or wait a minute on the live site and reload.';
     },
 
     handleForgotRequest(ctx) {
         const err = document.getElementById('auth-error');
         const email = (document.getElementById('forgot-email').value || '').trim().toLowerCase();
         if (!this.apiEnabled()) {
-            if (err) err.textContent = 'Live backend required - start the API server and reload.';
+            if (err) err.textContent = 'Backend not connected yet - on your computer run npm run dev, or wait a minute on the live site and reload.';
             return;
         }
         if (!email) { if (err) err.textContent = 'Enter your email address.'; return; }

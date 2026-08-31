@@ -15,6 +15,8 @@ import {
   generateRecoveryCodes, hashRecoveryCode, generateTotpSecret, totpUri, verifyTotp,
 } from '../mfa.js';
 
+import '../bcrypt-random.js';
+
 const router = Router();
 
 // Precomputed dummy hash used when the email is unknown, so a failed login

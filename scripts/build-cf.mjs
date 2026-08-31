@@ -106,6 +106,9 @@ await esbuild({
       'worker_threads', 'zlib',
     ].flatMap((name) => [name, 'node:' + name]),
   ],
+  banner: {
+    js: 'import { createRequire as __workerCreateRequire } from "node:module";\nconst require = __workerCreateRequire("/");\n',
+  },
   logLevel: 'info',
 });
 
