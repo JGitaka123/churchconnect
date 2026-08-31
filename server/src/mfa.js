@@ -13,6 +13,38 @@
 // production, an unconfigured method fails closed (no code is issued to logs).
 import crypto from 'node:crypto';
 
+// CSPRNG that runs on Node AND Cloudflare Workers. node:crypto.randomBytes and
+// randomInt are not guaranteed on every Workers runtime, so we draw from Web
+// Crypto's getRandomValues instead, which exists in both environments.
+const webCrypto = globalThis.crypto;
+
+function randomBytes(length) {
+  const bytes = new Uint8Array(length);
+  webCrypto.getRandomValues(bytes);
+  return bytes;
+}
+
+// Uniform random integer in [0, max) using rejection sampling so the result is
+// unbiased. Supports ranges up to 2^48.
+function randomInt(max) {
+  if (!Number.isInteger(max) || max <= 0) throw new RangeError('randomInt max must be a positive integer');
+  const byteLength = max <= 0x100000000 ? 4 : 6;
+  const span = byteLength === 4 ? 0x100000000 : 0x1000000000000; // 2^32 / 2^48
+  const limit = Math.floor(span / max) * max;
+  const bytes = new Uint8Array(byteLength);
+  let v;
+  do {
+    webCrypto.getRandomValues(bytes);
+    v = 0;
+    for (let i = 0; i < byteLength; i++) v = v * 256 + bytes[i];
+  } while (v >= limit);
+  return v % max;
+}
+
+function randomHex(byteLength) {
+  return Array.from(randomBytes(byteLength), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export const CODE_TTL_MS = 10 * 60 * 1000;   // codes expire after 10 minutes
 export const MAX_ATTEMPTS = 5;               // failed entries before invalidation
 
@@ -22,13 +54,13 @@ export const MAX_ATTEMPTS = 5;               // failed entries before invalidati
 // attempts window collides (astronomically unlikely).
 export function generateCode(excludeHash = null, attempts = 8) {
   for (let i = 0; i < attempts; i++) {
-    const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    const code = String(randomInt(1000000)).padStart(6, '0');
     if (!excludeHash || !verifyCodeHash(excludeHash, code)) return code;
   }
-  return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  return String(randomInt(1000000)).padStart(6, '0');
 }
 
-export function hashCode(code, salt = crypto.randomBytes(8).toString('hex')) {
+export function hashCode(code, salt = randomHex(8)) {
   const digest = crypto.createHash('sha256').update(salt + code).digest('hex');
   return `${salt}:${digest}`;
 }
@@ -156,7 +188,7 @@ export async function deliverCode(user, method, code) {
   }
 
   if (isProd()) {
-    throw new Error(`MFA delivery method "${method}" is not configured (set EMAIL_API_KEY or SMS_USERNAME+SMS_API_KEY)`);
+    throw new Error(`${method === 'email' ? 'Email' : 'SMS'} delivery is not configured (set ${method === 'email' ? 'EMAIL_API_KEY' : 'SMS_USERNAME+SMS_API_KEY'} in Cloudflare and redeploy)`);
   }
 
   console.log(`[mfa-dev] ${method.toUpperCase()} code for ${user.email}: ${code}`);
@@ -209,7 +241,7 @@ function timingSafeEqualStr(a, b) {
 
 // Fresh random base32 secret for a user's authenticator app.
 export function generateTotpSecret(bytes = 20) {
-  return base32Encode(crypto.randomBytes(bytes));
+  return base32Encode(randomBytes(bytes));
 }
 
 // otpauth:// URI users scan with Google Authenticator / Authy / 1Password.
@@ -251,7 +283,7 @@ export function verifyTotp(secret, code, window = 1, when = Date.now()) {
 
 // Generate `count` single-use recovery codes (XXXXXX-XXXXXX-XXXXXX).
 export function generateRecoveryCodes(count = 10) {
-  const group = () => crypto.randomInt(0, 0x100000000).toString(36).padStart(6, '0').toUpperCase();
+  const group = () => randomInt(0x100000000).toString(36).padStart(6, '0').toUpperCase();
   return Array.from({ length: count }, () => `${group()}-${group()}-${group()}`);
 }
 

@@ -11,6 +11,18 @@ function Check-LastExit($stepName) {
   }
 }
 
+# Read one KEY=value line from a dotenv-style file (server\.env). Returns $null
+# when the key is missing, so optional delivery secrets stay optional.
+function Read-EnvValue($file, $name) {
+  if (-not (Test-Path $file)) { return $null }
+  foreach ($line in [System.IO.File]::ReadAllLines($file)) {
+    if ($line -match "^\s*$name\s*=(.*)$") {
+      return $Matches[1].Trim().Trim('"').Trim("'")
+    }
+  }
+  return $null
+}
+
 Write-Host ""
 Write-Host "============================================================"
 Write-Host "  ChurchConnect - Cloudflare Pages one-click deploy"
@@ -83,6 +95,29 @@ $secrets = [ordered]@{
   BCRYPT_ROUNDS = '4'
   CORS_ORIGINS  = 'https://churchconnect.pages.dev'
   JWT_SECRET    = $jwt
+}
+
+# Pull the email/SMS delivery secrets from server\.env so MFA and password
+# reset codes actually send after deployment (production fails closed without
+# them). Values are optional - only configured channels are uploaded.
+$serverEnv = Join-Path $PSScriptRoot 'server\.env'
+$emailKey = Read-EnvValue $serverEnv 'EMAIL_API_KEY'
+$emailFrom = Read-EnvValue $serverEnv 'EMAIL_FROM'
+$emailFromName = Read-EnvValue $serverEnv 'EMAIL_FROM_NAME'
+$smsUsername = Read-EnvValue $serverEnv 'SMS_USERNAME'
+$smsApiKey = Read-EnvValue $serverEnv 'SMS_API_KEY'
+$smsFrom = Read-EnvValue $serverEnv 'SMS_FROM'
+if ($emailKey) { $secrets['EMAIL_API_KEY'] = $emailKey }
+if ($emailFrom) { $secrets['EMAIL_FROM'] = $emailFrom }
+if ($emailFromName) { $secrets['EMAIL_FROM_NAME'] = $emailFromName }
+if ($smsUsername) { $secrets['SMS_USERNAME'] = $smsUsername }
+if ($smsApiKey) { $secrets['SMS_API_KEY'] = $smsApiKey }
+if ($smsFrom) { $secrets['SMS_FROM'] = $smsFrom }
+if (-not $emailKey -and -not $smsUsername -and -not $smsApiKey) {
+  Write-Host ""
+  Write-Host "  NOTE: no EMAIL_API_KEY / SMS_API_KEY found in server\.env - MFA and"
+  Write-Host "        password-reset codes will NOT be deliverable in production until"
+  Write-Host "        you add one (see server\.env.example)."
 }
 
 $tmp = Join-Path $env:TEMP ("cf-secrets-" + [guid]::NewGuid().ToString('N') + '.json')

@@ -12,7 +12,7 @@ import {
 import { genId } from './util.js';
 import {
   generateCode, hashCode, verifyCodeHash, deliverCode, deliverResetCode, availableMethods,
-  generateRecoveryCodes, hashRecoveryCode, generateTotpSecret, totpUri, verifyTotp,
+  providerConfigured, generateRecoveryCodes, hashRecoveryCode, generateTotpSecret, totpUri, verifyTotp,
 } from '../mfa.js';
 
 import '../bcrypt-random.js';
@@ -124,6 +124,16 @@ router.post('/mfa/request', async (req, res, next) => {
     if (!user || !user.active) return res.status(401).json({ error: 'Account not found or disabled' });
     if (method === 'sms' && !user.phone) return res.status(400).json({ error: 'No phone number on file - use email' });
 
+    // In production an unconfigured delivery method fails fast with a clear
+    // message instead of an obscure crash later (the code is only stored once
+    // delivery can actually happen).
+    if (config.env === 'production' && !providerConfigured(method)) {
+      const key = method === 'email' ? 'EMAIL_API_KEY' : 'SMS_USERNAME + SMS_API_KEY';
+      return res.status(502).json({
+        error: `Could not send the code - ${method} delivery is not set up on this site yet. Add ${key} to your Cloudflare Pages secrets and redeploy.`,
+      });
+    }
+
     const { rows: last } = await query(
       'SELECT code_hash FROM mfa_codes WHERE user_id = $1 AND method = $2 AND used = false AND expires_at > now() ORDER BY id DESC LIMIT 1',
       [user.id, method]
@@ -145,7 +155,7 @@ router.post('/mfa/request', async (req, res, next) => {
     } catch (e) {
       console.error('MFA delivery failed:', e.message);
       const detail = config.env === 'production' ? undefined : e.message;
-      return res.status(502).json({ error: 'Could not send the code. Check the email/SMS provider settings or try another method.', ...(detail ? { detail } : {}) });
+      return res.status(502).json({ error: `Could not send the code (${method}). Check the ${method === 'email' ? 'email' : 'SMS'} provider settings in Cloudflare, or try another method.`, ...(detail ? { detail } : {}) });
     }
     await auditLog(user.id, 'mfa_code_sent', { method }, req);
     return res.json({ ok: true, ...(delivered.debugCode !== undefined ? { debugCode: delivered.debugCode } : {}) });
