@@ -712,60 +712,93 @@ const ChurchApp = {
     async hydrateFromApi() {
         if (!this.apiEnabled()) return;
         const g = 'global';
-        const failed = [];
-        const grab = (p, name) => p.then((r) => r).catch((e) => { console.error('Hydrate failed (' + (name || '?') + '):', e); failed.push(name || 'data'); return undefined; });
-        const [branches, churches, members, transactions, attendance, groups, followUps, announcements, prayerRequests, events, campaigns, recurringGifts, careInbox, dashboardSummary] = await Promise.all([
-            grab(Church2API.branches(), 'branches'),
-            grab(Church2API.churches(), 'churches'),
-            grab(Church2API.members(g), 'members'),
-            grab(Church2API.transactions(g), 'transactions'),
-            grab(Church2API.attendance(g), 'attendance'),
-            grab(Church2API.groups(g), 'groups'),
-            grab(Church2API.followups(g), 'followups'),
-            grab(Church2API.announcements(), 'announcements'),
-            grab(Church2API.prayerRequests(g), 'prayers'),
-            grab(Church2API.events(g), 'events'),
-            grab(Church2API.campaigns(g), 'campaigns'),
-            grab(Church2API.recurringGifts(g), 'recurringGifts'),
-            grab(Church2API.careInbox(g), 'careInbox'),
-            grab(Church2API.dashboardSummary(this.session.currentBranch || 'global'), 'summary'),
-        ]);
-        // Members drive most member-centric views; only replace with a non-empty
-        // set so an unseeded/misconfigured backend can't blank the whole UI.
-        if (Array.isArray(branches) && branches.length) this.db.branches = branches;
-        if (Array.isArray(members) && members.length) this.db.members = members;
-        if (Array.isArray(transactions)) this.db.transactions = transactions;
-        if (Array.isArray(attendance)) this.db.attendance = attendance;
-        if (Array.isArray(groups)) this.db.groups = groups;
-        if (Array.isArray(followUps)) this.db.followUps = followUps;
-        if (Array.isArray(announcements)) this.db.announcements = announcements;
-        if (Array.isArray(prayerRequests)) this.db.prayerRequests = prayerRequests;
-        if (Array.isArray(events) && events.length) this.db.events = events;
-        if (Array.isArray(campaigns)) this.db.campaigns = campaigns;
-        if (Array.isArray(recurringGifts)) this.db.recurringGifts = recurringGifts;
-        if (Array.isArray(careInbox)) this.db.careInbox = careInbox;
-        if (Array.isArray(churches) && churches.length) {
-            this.db.churches = churches;
-            this.church = churches[0];
-            if (this.session.churchId === (churches[0] || {}).id) this.session.churchName = churches[0].name;
+        const failed = new Set();
+        // Each slice is a named request so a partial outage retries only the
+        // slices that failed, and the warning names them when one really breaks.
+        const slices = {
+            branches: () => Church2API.branches(),
+            churches: () => Church2API.churches(),
+            members: () => Church2API.members(g),
+            transactions: () => Church2API.transactions(g),
+            attendance: () => Church2API.attendance(g),
+            groups: () => Church2API.groups(g),
+            followUps: () => Church2API.followups(g),
+            announcements: () => Church2API.announcements(),
+            prayers: () => Church2API.prayerRequests(g),
+            events: () => Church2API.events(g),
+            campaigns: () => Church2API.campaigns(g),
+            recurringGifts: () => Church2API.recurringGifts(g),
+            careInbox: () => Church2API.careInbox(g),
+            summary: () => Church2API.dashboardSummary(this.session.currentBranch || 'global'),
+        };
+        const runOne = async (name, factory) => {
+            try {
+                this.applyHydrateSlice(name, await factory());
+            } catch (e) {
+                console.error('Hydrate failed (' + name + '):', e);
+                failed.add(name);
+            }
+        };
+        const runAll = () => Promise.all(Object.keys(slices).map((n) => runOne(n, slices[n])));
+        await runAll();
+        if (failed.size) {
+            // A fresh deploy can take a few seconds to warm up (Worker compile +
+            // Neon connection pool). Retry only the failed slices, twice, with a
+            // short backoff, before showing any warning.
+            for (const delay of [3000, 6000]) {
+                await new Promise((r) => setTimeout(r, delay));
+                const retry = [...failed];
+                failed.clear();
+                await Promise.all(retry.map((n) => runOne(n, slices[n])));
+                if (!failed.size) break;
+            }
         }
-        if (dashboardSummary && typeof dashboardSummary === 'object') this.dashboardSummary = dashboardSummary;
         this.applyChurchBranding();
         this.ensureTransportMeta();
         this.loadAttendanceMeta();
-        if (failed.length) this.showDataWarning();
+        if (failed.size) this.showDataWarning([...failed]);
     },
 
-    // If any API slice failed to load, surface a visible, dismissible banner
-    // instead of letting the app silently look like empty tabs.
-    showDataWarning() {
+    // Merge one fetched slice into this.db using the same rules as before:
+    // members/branches/churches/events only replace when non-empty so an
+    // unseeded backend can't blank the UI, everything else replaces freely.
+    applyHydrateSlice(name, data) {
+        if (data === undefined) return;
+        if (name === 'branches') { if (Array.isArray(data) && data.length) this.db.branches = data; return; }
+        if (name === 'churches') {
+            if (Array.isArray(data) && data.length) {
+                this.db.churches = data;
+                this.church = data[0];
+                if (this.session.churchId === (data[0] || {}).id) this.session.churchName = data[0].name;
+            }
+            return;
+        }
+        if (name === 'members') { if (Array.isArray(data) && data.length) this.db.members = data; return; }
+        if (name === 'transactions') { if (Array.isArray(data)) this.db.transactions = data; return; }
+        if (name === 'attendance') { if (Array.isArray(data)) this.db.attendance = data; return; }
+        if (name === 'groups') { if (Array.isArray(data)) this.db.groups = data; return; }
+        if (name === 'followUps') { if (Array.isArray(data)) this.db.followUps = data; return; }
+        if (name === 'announcements') { if (Array.isArray(data)) this.db.announcements = data; return; }
+        if (name === 'prayers') { if (Array.isArray(data)) this.db.prayerRequests = data; return; }
+        if (name === 'events') { if (Array.isArray(data) && data.length) this.db.events = data; return; }
+        if (name === 'campaigns') { if (Array.isArray(data)) this.db.campaigns = data; return; }
+        if (name === 'recurringGifts') { if (Array.isArray(data)) this.db.recurringGifts = data; return; }
+        if (name === 'careInbox') { if (Array.isArray(data)) this.db.careInbox = data; return; }
+        if (name === 'summary') { if (data && typeof data === 'object') this.dashboardSummary = data; return; }
+    },
+
+    // If any API slice still failed after retries, surface a visible,
+    // dismissible banner naming the slices instead of letting the app silently
+    // look like empty tabs.
+    showDataWarning(slices) {
         if (typeof document === 'undefined') return;
         if (document.getElementById('data-warning-banner')) return;
+        const names = Array.isArray(slices) && slices.length ? ' (' + slices.join(', ') + ')' : '';
         const banner = document.createElement('div');
         banner.id = 'data-warning-banner';
         banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#b91c1c;color:#fff;padding:10px 14px;font-size:13px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.45);cursor:pointer;';
         banner.title = 'Click to dismiss';
-        banner.innerHTML = 'Warning: some data could not be loaded from the server. If tabs look empty, make sure the backend is running, then press Ctrl+F5 to refresh.';
+        banner.innerHTML = 'Warning: some data could not be loaded from the server' + names + '. If tabs look empty, make sure the backend is running, then press Ctrl+F5 to refresh.';
         banner.addEventListener('click', () => banner.remove());
         document.body.appendChild(banner);
     },
