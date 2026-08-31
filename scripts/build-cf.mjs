@@ -1,20 +1,25 @@
 // Build script for Cloudflare Pages.
 //
 // Produces dist/ - a self-contained static build of the ChurchConnect SPA plus
-// the small Pages config files (headers, redirects, function routes):
+// the Pages config files and the prebuilt API worker:
 //
 //   - SPA assets: index.html, app.js, styles.css, js/, vendor/, icons/, ...
-//   - <meta name="church-api" content="same-origin"> injected into index.html
-//     so js/config.js points API calls at the same origin (/api/* on Pages).
-//   - _headers, _redirects, _routes.json for Pages.
+//   - _worker.js: the Express API bundled with esbuild (Cloudflare Pages
+//     advanced mode). The bundle is produced here, on the build machine, so
+//     Wrangler only uploads dist/ and never resolves the server module graph
+//     at deploy time (that resolution failed on this repo's OneDrive path,
+//     which broke the old functions/api/[[path]].js setup).
+//   - _routes.json: only /api/* invokes the Worker.
+//   - _headers, _redirects for the SPA.
 //
-// The backend (server/) is intentionally not copied: it runs in Pages
-// Functions (functions/api/[[path]].js) and its secrets live in the Pages
-// project environment, never in dist/.
+// The backend sources (server/) are intentionally not copied into dist/ - the
+// API lives in _worker.js and its secrets live in the Pages project
+// environment, never in the bundle.
 
 import { cpSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build as esbuild } from 'esbuild';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
@@ -50,7 +55,7 @@ for (const item of COPY_ITEMS) {
 
 // 3. Inject the same-origin marker. js/config.js reads this meta tag and sets
 //    apiBase to window.location.origin, so the SPA talks to the Pages
-//    Functions /api/* routes with no CORS config.
+//    _worker.js /api/* routes with no CORS config.
 const indexHtmlPath = resolve(dist, 'index.html');
 let indexHtml = readFileSync(indexHtmlPath, 'utf8');
 if (!indexHtml.includes('name="church-api"')) {
@@ -69,15 +74,31 @@ writeFileSync(
   ['/sw.js', '  Cache-Control: no-cache, no-store, must-revalidate', ''].join('\n')
 );
 
-// 5. SPA fallback for deep links and refreshes. /api/* is handled by Pages
-//    Functions before this rule and is excluded via _routes.json.
+// 5. SPA fallback for deep links and refreshes. /api/* is handled by the
+//    Worker before this rule and is excluded via _routes.json.
 writeFileSync(resolve(dist, '_redirects'), '/* /index.html 200\n');
 
-// 6. Route table: only /api/* invokes the Functions layer, so static assets
-//    never trigger a function invocation.
+// 6. Bundle the Express API into a single Worker (_worker.js = Pages advanced
+//    mode). node: builtins and cloudflare:node stay external and are provided
+//    by the Workers runtime under nodejs_compat_v2 (wrangler.toml), so the
+//    output is fully self-contained and deploys with no resolution step.
+await esbuild({
+  entryPoints: [resolve(root, 'server/src/pages-entry.js')],
+  outfile: resolve(dist, '_worker.js'),
+  bundle: true,
+  format: 'esm',
+  platform: 'neutral',
+  mainFields: ['module', 'main'],
+  target: 'es2022',
+  external: ['cloudflare:node'],
+  logLevel: 'info',
+});
+
+// 7. Route table: only /api/* invokes the Worker, so static assets never
+//    trigger a Worker invocation.
 writeFileSync(
   resolve(dist, '_routes.json'),
   JSON.stringify({ version: 1, include: ['/api/*'], exclude: [] }, null, 2) + '\n'
 );
 
-console.log('[build-cf] OK - wrote dist/ with ' + COPY_ITEMS.length + ' assets + Pages config');
+console.log('[build-cf] OK - wrote dist/ with ' + COPY_ITEMS.length + ' assets + _worker.js + Pages config');
