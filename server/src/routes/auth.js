@@ -21,7 +21,8 @@ const router = Router();
 
 // Precomputed dummy hash used when the email is unknown, so a failed login
 // burns a bcrypt comparison and response timing doesn't reveal valid accounts.
-const DUMMY_HASH = bcrypt.hashSync('timing-equalizer', 6);
+// Precomputed constant - bcrypt hashing at module load is not allowed on Cloudflare Workers.
+const DUMMY_HASH = '$2a$06$3W6ooYzj4ar03jPADUj7guvAhlQVNXDsc5OMjkLiY7zBikO2olCCy';
 
 const publicUser = (u, churchName) => ({
   id: u.id, email: u.email, name: u.name, role: u.role, branchId: u.branch_id,

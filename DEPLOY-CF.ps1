@@ -37,6 +37,7 @@ if (-not (Test-Path $workerPath)) { throw 'dist/_worker.js is missing - the buil
 $workerText = [System.IO.File]::ReadAllText($workerPath)
 if ($workerText -notmatch 'setRandomFallback') { throw 'dist/_worker.js is missing the bcrypt random-source fix - delete dist and re-run.' }
 if ($workerText -notmatch 'createRequire') { throw 'dist/_worker.js is missing the require shim - delete dist and re-run.' }
+if ($workerText -match 'hashSync\(\s*[''\"]timing-equalizer') { throw 'dist/_worker.js still contains a startup-time bcrypt call - delete dist and re-run the build.' }
 Write-Host '  OK - the Worker bundle contains the Cloudflare fixes.'
 
 Write-Host ""
