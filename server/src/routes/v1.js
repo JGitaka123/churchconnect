@@ -41,10 +41,17 @@ v1AuthRouter.post('/login', async (req, res, next) => {
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
     const { rows } = await query(
-      'SELECT id, email, name, role, branch_id, church_id, phone, mfa_enabled, mfa_required, mfa_exempt, password_hash, login_attempts, locked_until, active, totp_secret, recovery_codes FROM users WHERE email = $1',
+      'SELECT id, email, name, role, branch_id, church_id, phone, mfa_enabled, mfa_required, password_hash, login_attempts, locked_until, active, totp_secret, recovery_codes FROM users WHERE email = $1',
       [String(email).toLowerCase()]
     );
     const user = rows[0];
+    // The MFA rescue flag only exists on newer databases - read it tolerantly.
+    if (user) {
+      try {
+        const ex = await query('SELECT mfa_exempt FROM users WHERE id = $1', [user.id]);
+        user.mfa_exempt = !!(ex.rows[0] && ex.rows[0].mfa_exempt);
+      } catch { user.mfa_exempt = false; }
+    }
     const fail = () => res.status(401).json({ error: 'Invalid email or password' });
     if (!user || !user.active) return fail();
 

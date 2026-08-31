@@ -54,12 +54,20 @@ router.post('/login', async (req, res, next) => {
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
     const { rows } = await query(
-      `SELECT id, email, name, role, branch_id, church_id, phone, mfa_enabled, mfa_required, mfa_exempt,
+      `SELECT id, email, name, role, branch_id, church_id, phone, mfa_enabled, mfa_required,
               password_hash, login_attempts, locked_until, active, totp_secret, recovery_codes
        FROM users WHERE email = $1`,
       [String(email).toLowerCase()]
     );
     const user = rows[0];
+    // The MFA rescue flag only exists on newer databases (the schema guard adds
+    // it on first request). Read it tolerantly so login never 500s on an old DB.
+    if (user) {
+      try {
+        const ex = await query('SELECT mfa_exempt FROM users WHERE id = $1', [user.id]);
+        user.mfa_exempt = !!(ex.rows[0] && ex.rows[0].mfa_exempt);
+      } catch { user.mfa_exempt = false; }
+    }
     const fail = () => res.status(401).json({ error: 'Invalid email or password' });
 
     if (!user) {
@@ -348,15 +356,30 @@ router.post('/mfa/settings', authenticate, async (req, res, next) => {
       return res.status(403).json({ error: 'MFA is required for this account and cannot be turned off.' });
     }
 
+    // The mfa_exempt rescue column may not exist yet on older databases -
+    // check once and fall back to the pre-rescue SQL if it is missing.
+    let hasExempt = false;
+    try {
+      const col = await query(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'mfa_exempt'`
+      );
+      hasExempt = col.rows.length > 0;
+    } catch { hasExempt = false; }
+
     let sql;
     let params;
     if (typeof phone === 'string') {
       const p = phone.trim();
       if (!p) return res.status(400).json({ error: 'Phone cannot be empty' });
-      sql = 'UPDATE users SET phone = $1, mfa_enabled = $2, mfa_exempt = NOT $2 WHERE id = $3';
+      sql = hasExempt
+        ? 'UPDATE users SET phone = $1, mfa_enabled = $2, mfa_exempt = NOT $2 WHERE id = $3'
+        : 'UPDATE users SET phone = $1, mfa_enabled = $2 WHERE id = $3';
       params = [p, enabled, req.user.sub];
     } else {
-      sql = 'UPDATE users SET mfa_enabled = $1, mfa_exempt = NOT $1 WHERE id = $2';
+      sql = hasExempt
+        ? 'UPDATE users SET mfa_enabled = $1, mfa_exempt = NOT $1 WHERE id = $2'
+        : 'UPDATE users SET mfa_enabled = $1 WHERE id = $2';
       params = [enabled, req.user.sub];
     }
     await query(sql, params);
