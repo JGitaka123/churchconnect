@@ -1,5 +1,10 @@
 # Deploying ChurchConnect to Cloudflare Pages
 
+> **Fastest path: double-click `DEPLOY-CF.bat`** at the repo root. It installs
+> dependencies, builds `dist/`, logs you into Cloudflare, creates the Pages
+> project, sets the required secrets, and deploys - no GitHub Actions needed.
+
+
 ChurchConnect deploys as a single Cloudflare Pages project:
 
 - **Static SPA** - `index.html`, `app.js`, `styles.css`, `js/`, `vendor/` and

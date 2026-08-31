@@ -90,7 +90,22 @@ await esbuild({
   platform: 'neutral',
   mainFields: ['module', 'main'],
   target: 'es2022',
-  external: ['cloudflare:node'],
+  // Node builtins stay external: the Workers runtime provides them under
+  // nodejs_compat_v2 (wrangler.toml). With platform 'neutral' esbuild does not
+  // auto-externalize them, so list both the node: prefixed and legacy names to
+  // stop resolution from walking out of the project into the host filesystem.
+  external: [
+    'cloudflare:node',
+    ...[
+      'assert', 'async_hooks', 'buffer', 'child_process', 'cluster', 'console',
+      'constants', 'crypto', 'dgram', 'diagnostics_channel', 'dns', 'domain',
+      'events', 'fs', 'http', 'http2', 'https', 'inspector', 'module', 'net',
+      'os', 'path', 'perf_hooks', 'process', 'punycode', 'querystring',
+      'readline', 'repl', 'stream', 'string_decoder', 'sys', 'timers', 'tls',
+      'trace_events', 'tty', 'url', 'util', 'v8', 'vm', 'wasi',
+      'worker_threads', 'zlib',
+    ].flatMap((name) => [name, 'node:' + name]),
+  ],
   logLevel: 'info',
 });
 

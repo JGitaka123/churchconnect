@@ -1,4 +1,4 @@
-﻿// Maximum Miracle Centre - main application controller
+// Maximum Miracle Centre - main application controller
 // Handles global state, CRUD operations, rendering, and Chart.js visualization
 
 // ---- Rendering helpers -------------------------------------------------------
@@ -432,7 +432,7 @@ const ChurchApp = {
         const isMfa = step === 'mfa';
         const heading = isRegister ? 'Create your account' : (isMfa ? 'Secure your account' : 'Welcome back');
         const copy = isRegister
-            ? 'One account for everything ministry ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â membership, giving, groups and volunteer rotas across every campus.'
+            ? 'One account for everything ministry - membership, giving, groups and volunteer rotas across every campus.'
             : 'Manage membership, giving, groups and AI ministry insights from one console, across every campus.';
         const ctaLabel = isRegister ? 'Already have an account? Sign in' : 'Create account';
         return `
@@ -1837,7 +1837,7 @@ const ChurchApp = {
                 return d && (now - d.getTime()) <= 30 * dayMs;
             }).length;
             nmTotal.innerText = String(newCount);
-            if (nmChange) nmChange.innerText = newCount > 0 ? 'new' : 'â€”';
+            if (nmChange) nmChange.innerText = newCount > 0 ? 'new' : '-';
         }
 
         // Overall health - starts from real engagement and penalises real gaps.
@@ -3100,7 +3100,7 @@ const ChurchApp = {
                         <div>
                             <span class="member-name">${esc(m.firstName)} ${esc(m.lastName)}</span>
                             <span class="member-id">ID: ${esc(m.id)}</span>
-                            ${m.rolePosition || m.maritalStatus || m.age != null ? `<span class="member-phone">${esc([m.rolePosition ? `Role: ${m.rolePosition}` : null, m.maritalStatus, m.age != null ? `${m.age} yrs` : null].filter(Boolean).join(' ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· '))}</span>` : ''}
+                            ${m.rolePosition || m.maritalStatus || m.age != null ? `<span class="member-phone">${esc([m.rolePosition ? `Role: ${m.rolePosition}` : null, m.maritalStatus, m.age != null ? `${m.age} yrs` : null].filter(Boolean).join(' · '))}</span>` : ''}
                         </div>
                     </div>
                 </td>
@@ -3201,13 +3201,13 @@ const ChurchApp = {
                         <h4>Member Details</h4>
                         <div class="member-detail-grid" style="margin-top:8px;">
                             <div>
-                                <p><strong>Role / Position:</strong> ${esc(member.rolePosition || 'ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â')}</p>
-                                <p><strong>Marital Status:</strong> ${esc(member.maritalStatus || 'ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â')}</p>
-                                <p><strong>Age:</strong> ${member.age != null ? esc(String(member.age)) : 'ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â'}</p>
+                                <p><strong>Role / Position:</strong> ${esc(member.rolePosition || 'Not provided')}</p>
+                                <p><strong>Marital Status:</strong> ${esc(member.maritalStatus || 'Not provided')}</p>
+                                <p><strong>Age:</strong> ${member.age != null ? esc(String(member.age)) : 'Not provided'}</p>
                             </div>
                             <div>
-                                <p><strong>Expectations from the group:</strong> ${esc(member.expectations || 'ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â')}</p>
-                                <p><strong>Previous experience / organization:</strong> ${esc(member.previousExperience || 'ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â')}</p>
+                                <p><strong>Expectations from the group:</strong> ${esc(member.expectations || 'Not provided')}</p>
+                                <p><strong>Previous experience / organization:</strong> ${esc(member.previousExperience || 'Not provided')}</p>
                             </div>
                         </div>
                     </div>
@@ -6097,8 +6097,8 @@ const ChurchApp = {
 
         const branchId = (member && member.branchId) || (user && user.branchId);
         const branch = (member && member.branchName) || (branchId && (this.db.branches || []).find(b => b.id === branchId))?.name || 'Church Campus';
-        const phone = (member && member.phone) || (user && user.phone) || 'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â';
-        const email = (member && member.email) || (user && user.email) || 'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â';
+        const phone = (member && member.phone) || (user && user.phone) || 'Not provided';
+        const email = (member && member.email) || (user && user.email) || 'Not provided';
 
         const setText = (id, value) => {
             const el = document.getElementById(id);
