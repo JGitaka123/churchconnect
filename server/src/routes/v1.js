@@ -5,12 +5,10 @@
 // to use the legacy unversioned /api/* endpoints, which are untouched.
 //
 // Note on the AI endpoints: the categorization/repurposing logic lives in
-// ai-engine.js (repo root). The require below resolves to the repo root in
-// both local dev (Church/ai-engine.js) and the Docker image (/app/ai-engine.js).
+// ai-engine.js (repo root). Imported statically so it resolves in local dev,
+// the Docker image, and the Cloudflare Workers bundle alike.
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
 import { hashPassword, verifyPassword, requireRole, resolveChurch, passwordProblem } from '../auth.js';
@@ -21,9 +19,7 @@ import {
   issueAccess, verifyMfaForUser, auditLog,
 } from '../security.js';
 
-const require = createRequire(import.meta.url);
-const aiPath = fileURLToPath(new URL('../../../ai-engine.js', import.meta.url));
-const AIEngine = require(aiPath);
+import AIEngine from '../../../ai-engine.js';
 
 // ---------------------------------------------------------------- auth
 // "12h" / "30m" / "3600" -> seconds, matching the docs' expires_in field.

@@ -1,0 +1,19 @@
+# Cloudflare Pages project configuration (V2 build system).
+#
+# The SPA in dist/ (built by scripts/build-cf.mjs) is served by Pages' static
+# asset pipeline; the Express API runs in Pages Functions
+# (functions/api/[[path]].js) mounted under /api/* and talks to Neon Postgres
+# via the WebSocket driver (@neondatabase/serverless).
+#
+# Create the project once (or let the GitHub Action create it on first deploy):
+#   npx wrangler pages project create churchconnect --production-branch main
+
+name = "churchconnect"
+pages_build_output_dir = "./dist"
+
+# Recent compatibility date: enables the Node.js compatibility layer used by
+# functions/api/[[path]].js (cloudflare:node HTTP server modules auto-enable
+# for dates >= 2025-09-01; nodejs_compat_v2 auto-enables for >= 2026-08-04).
+# The explicit flags below are harmless and keep the config self-documenting.
+compatibility_date = "2026-08-19"
+compatibility_flags = ["nodejs_compat", "nodejs_compat_v2"]

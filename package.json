@@ -5,7 +5,8 @@
   "main": "app.js",
   "scripts": {
     "test": "node test.js",
-    "start": "npx http-server"
+    "start": "npx http-server",
+    "build": "node scripts/build-cf.mjs"
   },
   "keywords": [
     "church",

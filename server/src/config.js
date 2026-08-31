@@ -1,19 +1,32 @@
-import dotenv from 'dotenv';
+﻿import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Load server/.env relative to this file, not the process CWD, so the server
 // uses the right DB credentials no matter which directory it is started from.
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+// On Cloudflare Workers import.meta.url is undefined after bundling, so the
+// .env loading (and __dirname) is skipped there - secrets come from Pages
+// environment variables instead.
+const here = (() => {
+  try {
+    return typeof import.meta.url === 'string' ? fileURLToPath(import.meta.url) : null;
+  } catch {
+    // Bundled Workers builds can expose a synthetic (non-file) module URL;
+    // .env loading is skipped there - secrets come from Pages vars instead.
+    return null;
+  }
+})();
+const __dirname = here ? path.dirname(here) : undefined;
+if (here) dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 // Centralized, validated configuration. All secrets come from the environment;
 // nothing sensitive is ever committed. See server/.env.example.
 const required = (name, fallback) => {
   const v = process.env[name] ?? fallback;
   if (v === undefined) {
-    console.error(`Missing required env var: ${name}`);
-    process.exit(1);
+    // Fail fast with a clear message. process.exit may not exist on Workers.
+    if (typeof process.exit === 'function') process.exit(1);
+    throw new Error(`Missing required env var: ${name}`);
   }
   return v;
 };
@@ -21,6 +34,10 @@ const required = (name, fallback) => {
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '4000', 10),
+
+  // DB driver: "pg" (node-postgres, local/Docker) or "neon"
+  // (@neondatabase/serverless over WebSocket, required on Cloudflare Workers).
+  dbDriver: process.env.DB_DRIVER || 'pg',
 
   // Postgres - either a single DATABASE_URL or discrete PG* vars.
   databaseUrl: process.env.DATABASE_URL || null,
@@ -55,4 +72,3 @@ export const config = {
     .map((s) => s.trim())
     .filter(Boolean),
 };
-

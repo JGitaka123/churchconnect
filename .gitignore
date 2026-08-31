@@ -21,3 +21,6 @@ Thumbs.db
 
 # Corrupt lockfile artifact
 package-lock.json.corrupt
+
+# Cloudflare Pages build output
+dist/

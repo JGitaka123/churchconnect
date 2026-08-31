@@ -1,0 +1,109 @@
+name: Cloudflare Pages Deploy
+
+# Builds the SPA with scripts/build-cf.mjs and deploys dist/ to Cloudflare
+# Pages, with the Express API running in Pages Functions (functions/api).
+# Everything the deploy needs is in the repo; the only setup is two repository
+# secrets:
+#
+#   CLOUDFLARE_API_TOKEN  - API token with Pages:Edit permission (My Profile ->
+#                           API Tokens -> Create Token -> "Edit Cloudflare
+#                           Workers" template, add the Pages:Edit permission)
+#   CLOUDFLARE_ACCOUNT_ID - Account ID (dashboard right rail, or `wrangler whoami`)
+#
+# The Pages project is named "churchconnect" (wrangler.toml); the deploy step
+# creates it on first use. Full setup steps are in CLOUDFLARE.md.
+#
+# Pushes to main deploy to production; pushes to any other branch produce a
+# preview URL. Without the secrets the job skips instead of failing.
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for Cloudflare credentials
+        id: guard
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Cloudflare secrets not set - skipping deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.guard.outputs.ready == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: steps.guard.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Server deps include @neondatabase/serverless, which wrangler bundles
+      # into the Pages Functions build for the API.
+      - name: Install server dependencies
+        if: steps.guard.outputs.ready == 'true'
+        working-directory: server
+        run: npm ci
+
+      # Don't ship a broken demo: the same suite the CI pipeline runs.
+      - name: Run test suite
+        if: steps.guard.outputs.ready == 'true'
+        run: npm test
+
+      - name: Build static SPA
+        if: steps.guard.outputs.ready == 'true'
+        run: npm run build
+
+      - name: Create Pages project if needed
+        if: steps.guard.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@3 pages project create churchconnect --production-branch main \
+            >/dev/null 2>&1 || echo "Pages project already exists (or was created manually)."
+
+      - name: Deploy to Cloudflare Pages
+        if: steps.guard.outputs.ready == 'true'
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            BRANCH="main"
+          else
+            BRANCH="${GITHUB_REF_NAME}"
+          fi
+          npx --yes wrangler@3 pages deploy dist --project-name churchconnect --branch "$BRANCH"
+          echo "Deployed to https://churchconnect.pages.dev"
+
+      - name: Summary
+        if: steps.guard.outputs.ready == 'true'
+        run: |
+          {
+            echo "### Cloudflare Pages deploy"
+            echo ""
+            echo "**https://churchconnect.pages.dev**"
+            echo ""
+            echo "Sign in with \`admin@maximummiracle.org\` / \`grace\` (MFA needs a configured email/SMS provider - see CLOUDFLARE.md)."
+          } >> "$GITHUB_STEP_SUMMARY"
