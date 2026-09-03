@@ -912,7 +912,9 @@
                     <div class="broadcast-layout">
                         <form id="broadcast-form" class="broadcast-compose">
                             <h3 style="font-family: var(--font-header); font-size:1.05rem; margin-bottom:4px; display:flex; align-items:center; gap:8px;"><svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true" style="width:20px;height:20px;color:#93c5fd;"><path d="M3 10v4a1 1 0 0 0 1 1h3l7 4V5L7 9H4a1 1 0 0 0-1 1z"/><path d="M17.5 8.5a4 4 0 0 1 0 7"/></svg> Broadcast Announcement</h3>
-                            <span style="font-size:0.75rem; color:var(--text-secondary);">Reach your congregation across email, SMS, and push</span>
+                            <span style="font-size:0.75rem; color:var(--text-secondary);">Reach your congregation across email, SMS, WhatsApp, and the in-app feed</span>
+                            <div id="broadcast-notify-status" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px;"></div>
+                            <button type="button" id="broadcast-test-email-btn" class="btn btn-secondary btn-sm" style="margin-top:8px; font-size:0.7rem;">Send test email to me</button>
                             <div style="margin-top:14px;">
                                 <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Title</label>
                                 <input type="text" id="broadcast-title" class="form-control" required placeholder="e.g. Sunday service moved to 10 AM">
@@ -933,6 +935,7 @@
                                     <div class="broadcast-channels">
                                         <label><input type="checkbox" class="broadcast-channel" value="email" checked> Email</label>
                                         <label><input type="checkbox" class="broadcast-channel" value="sms" checked> SMS</label>
+                                        <label><input type="checkbox" class="broadcast-channel" value="whatsapp"> WhatsApp</label>
                                         <label><input type="checkbox" class="broadcast-channel" value="push"> Push</label>
                                     </div>
                                 </div>
@@ -1018,9 +1021,9 @@
                                 <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Website</label>
                                 <input type="text" id="church-website-input" class="form-control" placeholder="https://">
                             <div>
-                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Church YouTube Channel</label>
-                                <input type="text" id="church-youtube-input" class="form-control" placeholder="https://youtube.com/@YourChurch">
-                                <span style="font-size:0.68rem; color:var(--text-secondary);">Paste the channel link - every service appears in the member app's Sermons tab as a scrollable feed.</span>
+                                <label style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Sermon video source link (YouTube / Facebook / other)</label>
+                                <input type="text" id="church-youtube-input" class="form-control" placeholder="https://youtube.com/@YourChurch or https://facebook.com/YourPage">
+                                <span style="font-size:0.68rem; color:var(--text-secondary);">Paste your YouTube channel/video, Facebook page or video, Vimeo, or any other program link - it powers the member app's Sermons tab.</span>
                             </div>
                             </div>
                             <div>
@@ -1130,6 +1133,11 @@
                     <div class="mobile-stage-caption">
                         <strong>Live Member App Preview</strong>
                         <span>This is exactly what congregation members see on their phones - tap through Home, Sermons, Scripture, Giving, and Profile, plus Projects, Serve, and AI Care from your profile.</span>
+                        <div class="mobile-preview-as" style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <label for="mobile-preview-branch" style="font-size:0.78rem; color:var(--text-secondary);">Preview member of:</label>
+                            <select id="mobile-preview-branch" class="select-custom" style="min-width:190px; font-size:0.78rem; padding:5px 8px;"></select>
+                            <span style="font-size:0.7rem; color:var(--text-secondary);">Members only ever see their own branch&apos;s activity.</span>
+                        </div>
                     </div>
                     <div class="smartphone">
                         <div class="mobile-screen">
@@ -1318,6 +1326,19 @@
                                     <input type="text" id="mobile-bible-search" class="form-control bible-search-input" placeholder="Search e.g. trust, salvation...">
                                 </div>
 
+                                <!-- Reader view options: Pages/Scroll + Paper/Modern/Night style -->
+                                <div class="bible-view-bar">
+                                    <div class="bible-seg" id="bible-mode-seg">
+                                        <button type="button" class="bible-seg-btn" data-value="pages">Pages</button>
+                                        <button type="button" class="bible-seg-btn" data-value="scroll">Scroll</button>
+                                    </div>
+                                    <div class="bible-seg" id="bible-theme-seg">
+                                        <button type="button" class="bible-seg-btn" data-value="paper">Paper</button>
+                                        <button type="button" class="bible-seg-btn" data-value="modern">Modern</button>
+                                        <button type="button" class="bible-seg-btn" data-value="night">Night</button>
+                                    </div>
+                                </div>
+
                                 <!-- Book page / reader -->
                                 <div id="mobile-bible-verses" class="bible-reader">
                                     <!-- Chapter rendered as a book page by app.js -->
@@ -1337,7 +1358,7 @@
                                 </div>
                                 <div class="mobile-section-title">
                                     <strong>Pledges &amp; Giving</strong>
-                                    <span>Your pledge promise, what you have given and your giving history</span>
+                                    <span>A pledge is money you promised to give but have not yet given. Track what you promised, what you have given, and what is still remaining.</span>
                                 </div>
                                 <div id="mobile-pledge-panel" class="mobile-pledge-panel" style="margin-top:12px;">
                                     <div class="card-glass" style="padding:12px;">
@@ -1413,9 +1434,10 @@
                                         <select id="mobile-giving-category" class="select-custom" style="width:100%; font-size:0.75rem; padding:6px;">
                                             <option value="Tithe">Tithe Contribution</option>
                                             <option value="Offering">General Offering</option>
-                                            <option value="Pledge">Pledge Target</option>
+                                            <option value="Pledge">Pledge Payment (give what I promised)</option>
                                             <option value="Project Donation">Project/Building Campaign</option>
                                         </select>
+                                        <div id="mobile-giving-category-note" style="font-size:0.66rem; line-height:1.35; color:var(--accent-gold); margin-top:4px;">A pledge is money you promised to give but have not yet given - this screen collects money you are giving now.</div>
                                     </div>
                                     <div>
                                         <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Amount (Ksh)</label>
@@ -1435,6 +1457,10 @@
                                             <option value="Card">Card</option>
                                             <option value="Bank Transfer">Bank Transfer</option>
                                         </select>
+                                    </div>
+                                    <div id="mobile-giving-phone-row" style="display:none;">
+                                        <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">M-Pesa Phone Number</label>
+                                        <input type="tel" id="mobile-giving-phone" class="form-control" placeholder="0712 345 678" style="width:100%; font-size:0.75rem; padding:6px 10px;">
                                     </div>
                                     <div>
                                         <label style="font-size:0.65rem; color:var(--text-secondary); display:block; margin-bottom:3px;">Frequency</label>

@@ -42,20 +42,57 @@ app.get('*', (req, res) => {
 
 app.use(errorHandler);
 
-const server = app.listen(config.port, () => {
-  console.log(`Church 2.0 API listening on :${config.port} (${config.env})`);
+// ---- Start: never crash on a busy port -------------------------------------
+// If the configured port (4000 by default) is already taken by another server,
+// roll up to the next free port and print the real URL to open.
+const MAX_PORT_JUMPS = 20;
+const tryListen = (port) =>
+  new Promise((resolve, reject) => {
+    const srv = app.listen(port);
+    srv.once('listening', () => resolve(srv));
+    srv.once('error', (err) => {
+      if (err && err.code === 'EADDRINUSE') return reject(new Error('EADDRINUSE'));
+      reject(err);
+    });
+  });
+
+async function startServer() {
+  let server = null;
+  for (let port = config.port; port < config.port + MAX_PORT_JUMPS; port++) {
+    try {
+      server = await tryListen(port);
+      console.log(`\nChurch 2.0 is running at  http://localhost:${port}  (${config.env})`);
+      console.log(`Open this address in your browser - it serves the app AND the API.\n`);
+      break;
+    } catch (err) {
+      if (err && err.message === 'EADDRINUSE') {
+        console.log(`Port ${port} is already in use - trying port ${port + 1}...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  if (!server) {
+    console.error(`Ports ${config.port} to ${config.port + MAX_PORT_JUMPS - 1} are all busy. Close other node/npm windows and try again.`);
+    process.exit(1);
+  }
+
+  // Assimilated guests become permanent members after 1 month. Sweep on boot
+  // and hourly so the follow-up pipeline auto-clears without a page refresh.
+  pruneExpiredAssimilated().catch((e) => console.error('[assimilation] initial sweep failed', e));
+  setInterval(() => {
+    pruneExpiredAssimilated().catch((e) => console.error('[assimilation] hourly sweep failed', e));
+  }, 60 * 60 * 1000);
+
+  // Graceful shutdown
+  const shutdown = () => {
+    server.close(() => pool.end().then(() => process.exit(0)));
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+}
+
+startServer().catch((e) => {
+  console.error(e);
+  process.exit(1);
 });
-
-// Assimilated guests become permanent members after 1 month. Sweep on boot and
-// hourly so the follow-up pipeline auto-clears even without a page refresh.
-pruneExpiredAssimilated().catch((e) => console.error('[assimilation] initial sweep failed', e));
-setInterval(() => {
-  pruneExpiredAssimilated().catch((e) => console.error('[assimilation] hourly sweep failed', e));
-}, 60 * 60 * 1000);
-
-// Graceful shutdown
-const shutdown = () => {
-  server.close(() => pool.end().then(() => process.exit(0)));
-};
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);

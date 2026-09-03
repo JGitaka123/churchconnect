@@ -175,5 +175,9 @@ export function resolveScope(req) {
     if (!target || target === 'global') return null; // all campuses
     return target;
   }
-  return req.user.branchId; // locked to own campus
+  // Everyone else is locked to their own campus. A missing branch must NEVER
+  // widen the scope to "all campuses" (that would let a member with no branch
+  // see every branch's data) - return an impossible id so queries come back
+  // empty until an admin assigns the account to a campus.
+  return req.user.branchId || '__no_branch__';
 }

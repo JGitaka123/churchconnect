@@ -88,7 +88,16 @@ export const mapRecurringGift = (r) => ({
 export async function findMemberIdForUser(user) {
   if (!user) return null;
   if (user.email) {
-    const { rows } = await query('SELECT id FROM members WHERE lower(email) = lower($1) LIMIT 1', [user.email]);
+    // Prefer the member record on the SAME campus as the account. The same
+    // email can legitimately exist on two branches (e.g. a transferred member),
+    // and matching without a branch could point a user at another campus's
+    // profile, giving history and group announcements.
+    const { rows } = user.branchId
+      ? await query(
+          'SELECT id FROM members WHERE lower(email) = lower($1) AND branch_id = $2 ORDER BY created_at LIMIT 1',
+          [user.email, user.branchId]
+        )
+      : await query('SELECT id FROM members WHERE lower(email) = lower($1) ORDER BY created_at LIMIT 1', [user.email]);
     if (rows[0]) return rows[0].id;
   }
   const parts = String(user.name || '').trim().split(/\s+/);

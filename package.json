@@ -5,8 +5,7 @@
   "main": "app.js",
   "scripts": {
     "test": "node test.js",
-    "start": "node server/src/index.js",
-    "build": "node scripts/build-cf.mjs"
+    "start": "node server/src/index.js"
   },
   "keywords": [
     "church",

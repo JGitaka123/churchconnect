@@ -178,6 +178,8 @@ const ChurchApp = {
         selectedMemberId: null,
         selectedEventId: 'e3',
         simulatedMobileView: 'home', // home, sermons, bible, give, projects, serve, chat
+        mobilePreviewBranch: null,   // admin preview: branch whose member the phone acts as
+        mobilePreviewMemberId: null, // admin preview: actual member record used by the phone
         bibleVersion: 'KJV',
         bibleBook: 'John',
         bibleChapter: '1'
@@ -1656,8 +1658,57 @@ const ChurchApp = {
         });
     },
 
+    // Preview picker: lets an admin watch the member phone as a member of any
+    // branch (including a freshly added one with no members yet). Real signed
+    // in members are always locked to their own branch, so this is hidden and
+    // ignored for them.
+    isRealMemberOnPhone() {
+        const u = this.session && this.session.currentUser;
+        return !!(u && u.role === 'member');
+    },
+
+    populateMobilePreviewPicker() {
+        const sel = document.getElementById('mobile-preview-branch');
+        if (!sel) return;
+        const wrap = document.querySelector('.mobile-preview-as');
+        if (this.isRealMemberOnPhone()) {
+            if (wrap) wrap.style.display = 'none';
+            this.session.mobilePreviewBranch = null;
+            this.session.mobilePreviewMemberId = null;
+            return;
+        }
+        if (wrap) wrap.style.display = '';
+        const previous = this.session.mobilePreviewBranch || '';
+        sel.innerHTML = '';
+        const auto = document.createElement('option');
+        auto.value = '';
+        auto.textContent = 'Default demo member (Nairobi CBD)';
+        sel.appendChild(auto);
+        this.db.branches.forEach((b) => {
+            const opt = document.createElement('option');
+            opt.value = b.id;
+            opt.textContent = b.name;
+            sel.appendChild(opt);
+        });
+        sel.value = (previous && [...sel.options].some((o) => o.value === previous)) ? previous : '';
+        sel.onchange = () => this.setMobilePreviewBranch(sel.value);
+    },
+
+    setMobilePreviewBranch(branchId) {
+        if (!branchId) {
+            this.session.mobilePreviewBranch = null;
+            this.session.mobilePreviewMemberId = null;
+        } else {
+            this.session.mobilePreviewBranch = branchId;
+            const first = (this.db.members || []).find((m) => m.branchId === branchId);
+            this.session.mobilePreviewMemberId = first ? first.id : null;
+        }
+        this.renderAll();
+    },
+
     renderAll() {
         this.populateCampusSelects();
+        this.populateMobilePreviewPicker();
         this.populateMemberGiveProjects();
         const role = this.session.currentRole;
         const branchId = this.session.currentBranch;
@@ -1975,7 +2026,7 @@ const ChurchApp = {
                         <div class="event-date-badge"><span class="day">${day}</span><span class="mon">${mon}</span></div>
                         <div class="event-info">
                             <div class="event-title">${esc(e.title)}</div>
-                            <div class="event-time">${time ? time + ' · ' : ''}${esc(branch ? branch.name : '')}</div>
+                            <div class="event-time">${time ? time + ' Â· ' : ''}${esc(branch ? branch.name : '')}</div>
                             <div class="event-branch">${esc(roles)} &middot; ${goers.length} going</div>
                             ${goers.length ? `<div class="event-roster">${goers.map(m => `<span class="group-member-pill">${esc(m.firstName)} ${esc(m.lastName)}</span>`).join('')}</div>` : ''}
                         </div>
@@ -3198,6 +3249,10 @@ const ChurchApp = {
         const form = document.getElementById('group-announce-form-' + groupId);
         if (!form) return;
         if (form.style.display !== 'none' && form.innerHTML) { form.style.display = 'none'; return; }
+        const group = (this.db.groups || []).find(x => x.id === groupId);
+        const rosterMembers = (group ? (group.memberIds || []) : []).map(id => this.db.members.find(mm => mm.id === id)).filter(Boolean);
+        const reachEmail = rosterMembers.filter(m => (m.email || '').trim()).length;
+        const reachPhone = rosterMembers.filter(m => (m.phone || '').trim()).length;
         form.innerHTML = `
             <div class="group-announce-card">
                 <div class="group-announce-head">
@@ -3210,6 +3265,11 @@ const ChurchApp = {
                     <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:0.75rem; color:var(--text-secondary);">
                         <label style="display:flex; gap:5px; align-items:center;"><input type="checkbox" class="group-ann-channel" data-group="${esc(groupId)}" value="email" checked> Email</label>
                         <label style="display:flex; gap:5px; align-items:center;"><input type="checkbox" class="group-ann-channel" data-group="${esc(groupId)}" value="whatsapp" checked> WhatsApp</label>
+                        <label style="display:flex; gap:5px; align-items:center;"><input type="checkbox" class="group-ann-channel" data-group="${esc(groupId)}" value="sms"> SMS</label>
+                    </div>
+                    <div style="font-size:0.7rem; color:var(--text-secondary); border-top:1px solid var(--border-color); padding-top:8px;">
+                        ${rosterMembers.length} member(s) - ${reachEmail} with an email, ${reachPhone} with a phone.
+                        The message reaches only members who have the contact type you send on.
                     </div>
                     <div style="display:flex; gap:8px; justify-content:flex-end;">
                         <button type="button" class="btn btn-secondary btn-sm" onclick="ChurchApp.toggleGroupAnnounceForm('${esc(groupId)}')">Cancel</button>
@@ -3233,9 +3293,11 @@ const ChurchApp = {
         const channels = [...document.querySelectorAll('.group-ann-channel[data-group="' + groupId + '"]:checked')].map(c => c.value);
         if (!title) { this.toast('Enter an announcement title.', 'error'); return; }
         if (!body) { this.toast('Enter the announcement message.', 'error'); return; }
-        if (channels.length === 0) { this.toast('Pick at least one channel - email or WhatsApp.', 'error'); return; }
+        if (channels.length === 0) { this.toast('Pick at least one channel - email, SMS or WhatsApp.', 'error'); return; }
 
         const members = (group.memberIds || []).map(id => this.db.members.find(m => m.id === id)).filter(Boolean);
+        const withEmail = members.filter(m => (m.email || '').trim()).length;
+        const withPhone = members.filter(m => (m.phone || '').trim()).length;
         this.db.announcements = this.db.announcements || [];
         const announcement = {
             id: 'an_' + Date.now(),
@@ -3256,13 +3318,17 @@ const ChurchApp = {
                     announcement.id = srv.announcement.id;
                     announcement.recipients = srv.announcement.recipients;
                     if (srv.delivered) announcement.delivered = srv.delivered;
+                    if (srv.reach) announcement.reach = srv.reach;
                 }
             }
         );
         this.toggleGroupAnnounceForm(groupId);
         this.renderGroups();
         this.renderMobileGroups();
-        this.toast(`Announcement sent to ${members.length} member${members.length === 1 ? '' : 's'} via ${channels.join(' & ')}.`);
+        let note = '';
+        if (channels.includes('email') && withEmail < members.length) note += ` ${members.length - withEmail} have no email.`;
+        if (channels.includes('whatsapp') && withPhone < members.length) note += ` ${members.length - withPhone} have no phone.`;
+        this.toast(`Announcement sent to ${members.length} member${members.length === 1 ? '' : 's'} via ${channels.join(' & ')}.${note ? ' Not reached:' + note : ''}`);
     },
 
     // Web Groups tab: history of announcements posted to small groups.
@@ -3298,9 +3364,8 @@ const ChurchApp = {
     renderMobileGroups() {
         const container = document.getElementById('mobile-groups-list');
         if (!container) return;
-        const me = this.db.members.find(m => m.id === this.simulatedMemberId());
-        const myBranch = me ? me.branchId : this.firstBranchId();
-        const groups = (this.db.groups || []).filter(g => g.branchId === myBranch);
+        const phoneBranch = this.mobileMemberBranchId();
+        const groups = (this.db.groups || []).filter(g => g.branchId === phoneBranch);
         const memberId = this.simulatedMemberId();
 
         container.innerHTML = groups.map(g => {
@@ -3439,7 +3504,7 @@ const ChurchApp = {
                         <div>
                             <span class="member-name">${esc(m.firstName)} ${esc(m.lastName)}</span>
                             <span class="member-id">ID: ${esc(m.id)}</span>
-                            ${m.rolePosition || m.maritalStatus || m.age != null ? `<span class="member-phone">${esc([m.rolePosition ? `Role: ${m.rolePosition}` : null, m.maritalStatus, m.age != null ? `${m.age} yrs` : null].filter(Boolean).join(' · '))}</span>` : ''}
+                            ${m.rolePosition || m.maritalStatus || m.age != null ? `<span class="member-phone">${esc([m.rolePosition ? `Role: ${m.rolePosition}` : null, m.maritalStatus, m.age != null ? `${m.age} yrs` : null].filter(Boolean).join(' Â· '))}</span>` : ''}
                         </div>
                     </div>
                 </td>
@@ -4320,7 +4385,7 @@ const ChurchApp = {
         const bases = [
             { value: 'Tithe', label: 'Tithe Contribution' },
             { value: 'Offering', label: 'General Offering' },
-            { value: 'Pledge', label: 'Pledge Target' }
+            { value: 'Pledge', label: 'Pledge Payment (give what I promised)' }
         ];
         const baseOptions = bases.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
         const projectGroup = campaigns.length
@@ -6091,6 +6156,24 @@ const ChurchApp = {
     },
 
     renderBroadcasts() {
+        // Live provider status for the Broadcast composer (email/SMS/WhatsApp).
+        const statusEl = document.getElementById('broadcast-notify-status');
+        const testBtn = document.getElementById('broadcast-test-email-btn');
+        if (testBtn && !testBtn.dataset.bound) {
+            testBtn.dataset.bound = '1';
+            testBtn.addEventListener('click', () => this.sendTestEmailToMe());
+        }
+        if (statusEl) {
+            if (this.apiEnabled() && window.Church2API && Church2API.notifyStatus) {
+                Church2API.notifyStatus()
+                    .then((s) => this.renderNotifyStatusChips(statusEl, s))
+                    .catch(() => {
+                        statusEl.innerHTML = '<span style="font-size:0.66rem; color:var(--text-secondary);">Status unavailable - is the API server running?</span>';
+                    });
+            } else {
+                statusEl.innerHTML = '<span style="font-size:0.66rem; color:var(--text-secondary);">Demo mode - connect the API server to see live channel status.</span>';
+            }
+        }
         const log = document.getElementById('broadcast-log');
         if (log) {
             const items = (this.db.announcements || []).filter(a => (a.status || 'published') !== 'pending');
@@ -6136,15 +6219,86 @@ const ChurchApp = {
                     title, body, audience, channels, recipients,
                     sentAt: new Date().toISOString()
                 };
-                this.db.announcements.unshift(announcement);
-                this.saveDB();
-                this.apiWrite(() => Church2API.sendAnnouncement({ title, body, audience, channels }), (srv) => { if (srv && srv.id) announcement.id = srv.id; });
-                form.reset();
-                document.querySelectorAll('.broadcast-channel').forEach(c => { c.checked = (c.value !== 'push'); });
-                this.renderBroadcasts();
-                this.toast(`Broadcast sent to ${recipients} members via ${channels.join(', ')}.`);
+                const applyLocal = (extra) => {
+                    if (extra) Object.assign(announcement, extra);
+                    this.db.announcements.unshift(announcement);
+                    this.saveDB();
+                };
+                const resetForm = () => {
+                    form.reset();
+                    document.querySelectorAll('.broadcast-channel').forEach(c => { c.checked = (c.value !== 'push'); });
+                };
+                if (!this.apiEnabled()) {
+                    applyLocal(null);
+                    resetForm();
+                    this.renderBroadcasts();
+                    this.toast(`Broadcast saved (demo) for ${recipients} members via ${channels.join(', ')}.`);
+                    return;
+                }
+                Church2API.sendAnnouncement({ title, body, audience, channels })
+                    .then((srv) => {
+                        const extra = {};
+                        if (srv && srv.announcement) {
+                            if (srv.announcement.id) extra.id = srv.announcement.id;
+                            if (srv.announcement.recipients) extra.recipients = srv.announcement.recipients;
+                        }
+                        if (srv && srv.delivered) extra.delivered = srv.delivered;
+                        applyLocal(extra);
+                        resetForm();
+                        this.renderBroadcasts();
+                        const d = srv && srv.delivered;
+                        const note = d
+                            ? ` - ${d.delivered} sent${d.dev ? ' (simulated in server log)' : ''}, ${d.skipped} skipped (no contact on file)`
+                            : '';
+                        this.toast(`Broadcast published to ${recipients} members via ${channels.join(', ')}${note}.`);
+                    })
+                    .catch((err) => {
+                        applyLocal(null);
+                        this.renderBroadcasts();
+                        this.toast(`Broadcast not sent: ${err && err.message ? err.message : 'server error'}`, 'error');
+                    });
             };
         }
+    },
+
+    renderNotifyStatusChips(el, s) {
+        if (!el) return;
+        const chip = (label, on, detail, warn) => {
+            const color = warn ? '#fbbf24' : (on ? '#34d399' : 'var(--text-secondary)');
+            const border = warn ? 'rgba(251,191,36,0.55)' : (on ? 'rgba(52,211,153,0.55)' : 'rgba(255,255,255,0.16)');
+            return `<span style="font-size:0.66rem; padding:2px 9px; border-radius:10px; border:1px solid ${border}; color:${color};">${on ? '&#9679;' : '&#9675;'} ${label}${detail ? ' - ' + esc(detail) : ''}</span>`;
+        };
+        const whatsappDetail = s.whatsapp === 'meta' ? 'Meta Cloud' : (s.whatsapp === 'gateway' ? 'gateway' : 'off');
+        const providerLabel = s.provider === 'brevo' ? 'Brevo' : (s.provider === 'sendgrid' ? 'SendGrid' : 'Resend');
+        const fromDetail = s.email && s.emailFrom ? String(s.emailFrom).replace(/^.*<|>.*$/g, '') : '';
+        let html = chip('Email', !!s.email, s.email ? providerLabel + (fromDetail ? ' (' + fromDetail + ')' : '') : 'off');
+        if (s.email && s.emailTestSender) {
+            html += '<span style="font-size:0.66rem; color:#fbbf24;">Test sender (onboarding@resend.dev) only delivers to the Resend account owner - verify a domain at resend.com/domains and set EMAIL_FROM, or switch EMAIL_PROVIDER=brevo / sendgrid.</span>';
+        }
+        html += chip('SMS', !!s.sms, s.sms ? "Africa's Talking" : 'off');
+        html += chip('WhatsApp', !!s.whatsapp, whatsappDetail);
+        if (s.simulating) {
+            html += '<span style="font-size:0.66rem; color:#fbbf24;">Simulation on (MFA_DEV_DEBUG=1) - deliveries print to the server log</span>';
+        }
+        el.innerHTML = html;
+    },
+
+    sendTestEmailToMe() {
+        const user = this.session && this.session.currentUser;
+        const to = user && (user.email || '').trim();
+        if (!to) { this.toast('Your account has no email on file.', 'error'); return; }
+        if (!this.apiEnabled() || !window.Church2API || !Church2API.testEmail) {
+            this.toast('Connect the API server first - a test email needs the server to send it.', 'error');
+            return;
+        }
+        const btn = document.getElementById('broadcast-test-email-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+        Church2API.testEmail(to)
+            .then(() => { this.toast(`Test email sent to ${to} - check your inbox (and spam).`); })
+            .catch((e) => { this.toast(`Test email failed: ${e && e.message ? e.message : 'unknown server error'}`, 'error'); })
+            .finally(() => {
+                if (btn) { btn.disabled = false; btn.textContent = 'Send test email to me'; }
+            });
     },
 
     renderSuggestedAnnouncements() {
@@ -6168,7 +6322,7 @@ const ChurchApp = {
                         <strong class="suggestion-title">${esc(a.title)}</strong>
                         <span class="suggestion-meta">by ${esc(a.suggestedName || 'a member')}</span>
                     </div>
-                    <p class="suggestion-body">${esc((a.body || '').slice(0, 90))}${(a.body || '').length > 90 ? '…' : ''}</p>
+                    <p class="suggestion-body">${esc((a.body || '').slice(0, 90))}${(a.body || '').length > 90 ? 'â€¦' : ''}</p>
                 </div>
             `).join('') || '<p class="muted-italic" style="font-size:0.75rem;">No suggestions waiting.</p>';
         }
@@ -6183,7 +6337,7 @@ const ChurchApp = {
                 <div class="suggestion-item">
                     <div class="suggestion-head">
                         <strong class="suggestion-title">${esc(a.title)}</strong>
-                        <span class="suggestion-meta">Suggested by ${esc(a.suggestedName || 'a member')}${when ? ' · ' + esc(when) : ''}</span>
+                        <span class="suggestion-meta">Suggested by ${esc(a.suggestedName || 'a member')}${when ? ' Â· ' + esc(when) : ''}</span>
                     </div>
                     <p class="suggestion-body">${esc(a.body)}</p>
                     <div class="suggestion-actions">
@@ -6230,7 +6384,14 @@ const ChurchApp = {
     renderMobileAnnouncements() {
         const list = document.getElementById('mobile-announcements-list');
         if (!list) return;
-        const items = (this.db.announcements || []).filter(a => ['approved', 'published'].includes(a.status || 'published')).slice(0, 5);
+        // Data isolation: church-wide news plus this member's own campus only.
+        // Group-targeted announcements appear under "Group Announcements" and
+        // only for groups the member joined (see renderMobileGroups).
+        const scope = this.mobileMemberBranchId();
+        const items = (this.db.announcements || [])
+            .filter(a => ['approved', 'published'].includes(a.status || 'published'))
+            .filter(a => !a.groupId && (a.audience === 'all' || a.audience === scope))
+            .slice(0, 5);
         list.innerHTML = items.length ? items.map(a => {
             const stamp = a.sentAt || a.approvedAt || a.createdAt || a.suggestedAt;
             const when = stamp ? new Date(stamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
@@ -6238,7 +6399,7 @@ const ChurchApp = {
                 <div class="mobile-announcement-item">
                     <strong>${esc(a.title)}</strong>
                     <span>${esc(a.body)}</span>
-                    <span class="mobile-announcement-meta">${esc(when)}${a.approvedBy ? ' · Posted by ' + esc(a.approvedBy) : ''}</span>
+                    <span class="mobile-announcement-meta">${esc(when)}${a.approvedBy ? ' Â· Posted by ' + esc(a.approvedBy) : ''}</span>
                 </div>`;
         }).join('') : '<p class="muted-italic" style="font-size:0.72rem;">No announcements yet.</p>';
     },
@@ -6384,7 +6545,7 @@ const ChurchApp = {
     renderMobileProjects() {
         const list = document.getElementById('mobile-projects-list');
         if (!list) return;
-        const branchId = this.session.currentBranch;
+        const branchId = this.mobileMemberBranchId();
         const inScope = (bId) => (!branchId || branchId === 'global') ? true : bId === branchId;
         const campaigns = (this.db.campaigns || []).filter(c => inScope(c.branchId) || (branchId === 'global'));
         const money = (n) => window.money(n, { decimals: 0 });
@@ -6421,6 +6582,13 @@ const ChurchApp = {
     // First name of the signed-in user, used for mobile simulator greetings.
     mobileGreetingName() {
         const u = this.session.currentUser;
+        // When an admin is previewing the member phone, greet them as the
+        // member being simulated so it is clear whose branch is on screen.
+        if (!(u && u.role === 'member')) {
+            const sim = this.simulatedMember();
+            const simName = (sim && (sim.firstName || sim.name)) || '';
+            if (simName) return String(simName).trim().split(/\s+/)[0];
+        }
         const full = (u && (u.name || u.fullName || '')) || '';
         return full.trim().split(/\s+/)[0] || '';
     },
@@ -6472,7 +6640,11 @@ const ChurchApp = {
             ['#e2711d', '#f59e0b']
         ];
 
-        this.db.events.forEach((e, idx) => {
+        // Data isolation: the phone shows only this member's own campus. A
+        // member of one branch must never see another branch's events.
+        const phoneBranch = this.mobileMemberBranchId();
+        const branchEvents = (this.db.events || []).filter(e => e.branchId === phoneBranch);
+        branchEvents.forEach((e, idx) => {
             const div = document.createElement('div');
             div.className = 'mobile-event-card';
             const rsvped = (e.rsvpMemberIds || []).includes(this.simulatedMemberId());
@@ -6499,11 +6671,17 @@ const ChurchApp = {
             `;
             eventsContainer.appendChild(div);
         });
+        if (!branchEvents.length) {
+            eventsContainer.innerHTML = '<p class="muted-italic" style="font-size:0.72rem; margin:4px 0;">No upcoming events at your campus yet.</p>';
+        }
 
         // Recent approved prayer requests (shown when "View all" is tapped).
         const prayerList = document.getElementById('mobile-prayer-list');
         if (prayerList) {
-            const requests = (this.db.prayerRequests || []).slice(0, 3);
+            const phoneBranchName = this.mobileMemberBranchName();
+            const requests = (this.db.prayerRequests || [])
+                .filter(p => !p.branchName || p.branchName === phoneBranchName)
+                .slice(0, 3);
             prayerList.innerHTML = requests.length ? requests.map(p => `
                 <div class="mobile-prayer-item">
                     <strong>${esc(p.memberName || 'Church Member')}</strong>
@@ -6696,9 +6874,63 @@ const ChurchApp = {
         this.renderMobileHome();
     },
 
-    // Simulated logged-in member for the mobile app (consistent with giving).
+    // The member record the phone app acts as. A real signed-in member sees
+    // their OWN record (matched by email) so their giving, pledge and family
+    // details belong to them, not to the demo member. Admins previewing the
+    // member app fall back to the demo member (m1).
+    simulatedMember() {
+        const user = this.session && this.session.currentUser;
+        if (user && user.role === 'member' && user.email) {
+            const want = String(user.email).trim().toLowerCase();
+            // Prefer the member record that sits in the SAME campus as the
+            // account, so an email duplicated across branches never points a
+            // member at another branch's profile or activity.
+            const candidates = (this.db.members || []).filter(m => m.email && String(m.email).trim().toLowerCase() === want);
+            const match = candidates.find(m => m.branchId === user.branchId) || candidates[0];
+            if (match) return match;
+        }
+        // Admin preview: honour the "Preview member of..." picker so the phone
+        // acts as a real member of the chosen branch.
+        const pid = this.session && this.session.mobilePreviewMemberId;
+        if (pid) {
+            const picked = (this.db.members || []).find(m => m.id === pid);
+            if (picked) return picked;
+        }
+        return (this.db.members || []).find(m => m.id === 'm1') || null;
+    },
+
+    // Simulated logged-in member id for the mobile app (consistent with giving).
     simulatedMemberId() {
-        return 'm1';
+        const m = this.simulatedMember();
+        return m ? m.id : 'm1';
+    },
+
+    // The campus the simulated phone member belongs to. Every phone feed
+    // (events, serve, projects, groups, announcements, giving) is filtered to
+    // this campus so a member only ever sees their own branch's activity.
+    mobileMemberBranchId() {
+        const real = this.isRealMemberOnPhone();
+        if (!real) {
+            const pb = this.session && this.session.mobilePreviewBranch;
+            if (pb && pb !== 'global' && pb !== 'all') return pb;
+        } else {
+            const ub = this.session.currentUser && this.session.currentUser.branchId;
+            if (ub) return ub;
+        }
+        const m = this.simulatedMember();
+        if (m && m.branchId) return m.branchId;
+        const cur = this.session && this.session.currentBranch;
+        if (cur && cur !== 'global' && cur !== 'all') return cur;
+        const fb = this.firstBranchId();
+        return fb || 'b1';
+    },
+
+    // Display name of the phone member's campus (prayer rows carry a branch
+    // name rather than an id, so this mirrors mobileMemberBranchId by name).
+    mobileMemberBranchName() {
+        const id = this.mobileMemberBranchId();
+        const b = (this.db.branches || []).find(x => x.id === id);
+        return b ? b.name : '';
     },
 
     // "My Family" on the member home: add/edit family members by name.
@@ -6780,70 +7012,109 @@ const ChurchApp = {
         if (playerContainer) { playerContainer.style.display = 'none'; playerContainer.innerHTML = ''; }
 
         const isAdmin = ['hq_admin', 'branch_admin', 'platform_admin', 'ministry_leader'].includes(this.session.currentRole);
-        const channel = this.churchContactInfo().youtubeChannel || '';
+        const sourceUrl = this.churchContactInfo().youtubeChannel || '';
+        const info = this._sermonSourceInfo(sourceUrl);
         const brand = window.MMC_BRAND || {};
-        const churchName = (this.church && this.church.name) || brand.name || 'Church YouTube';
+        const churchName = (this.church && this.church.name) || brand.name || 'Church';
+        const hasSource = info.provider !== 'none';
+        const sourceLabel = info.provider === 'youtube'
+            ? (info.type === 'video' ? 'YouTube sermon link' : 'YouTube channel')
+            : info.provider === 'facebook'
+                ? (info.type === 'video' ? 'Facebook sermon link' : 'Facebook page')
+                : info.provider === 'vimeo' ? 'Vimeo sermon link'
+                : info.provider === 'media' ? 'Video link' : 'Sermon link';
 
         container.innerHTML = `
             <div class="yt-channel-banner">
                 <div class="yt-avatar">${esc(this._initials(churchName))}</div>
                 <div class="yt-channel-meta">
                     <strong class="yt-channel-name">${esc(churchName)}</strong>
-                    <span class="yt-channel-sub">Church YouTube Channel${channel ? ' &middot; latest services' : ''}</span>
+                    <span class="yt-channel-sub">Sermons${hasSource ? ' &middot; ' + sourceLabel : ''}</span>
                 </div>
                 <div class="yt-channel-actions" id="yt-channel-actions">
-                    ${isAdmin ? `<button type="button" class="yt-link-btn" onclick="ChurchApp.promptYoutubeChannel()">Link</button>` : ''}
+                    ${isAdmin ? `<button type="button" class="yt-link-btn" onclick="ChurchApp.promptSermonSource()">${hasSource ? 'Change' : 'Link'}</button>` : ''}
                 </div>
             </div>
             <div class="yt-feed-status" id="yt-feed-status">Loading latest services&hellip;</div>
             <div class="yt-feed" id="yt-feed-list"></div>
         `;
+        const status = document.getElementById('yt-feed-status');
+        const list = document.getElementById('yt-feed-list');
+        if (!list) return;
 
-        if (!channel) {
-            const status = document.getElementById('yt-feed-status');
+        if (!hasSource) {
             if (status) status.innerHTML = isAdmin
-                ? 'No church YouTube channel linked yet. Tap "Link" to add one - every service will appear here.'
-                : 'No church YouTube channel linked yet.';
-            this._renderLocalSermonFallback(document.getElementById('yt-feed-list'));
+                ? 'No sermon source linked yet. Tap "Link" to add your YouTube channel, a Facebook page or video, or any other sermon link.'
+                : 'No sermon source linked yet.';
+            this._renderLocalSermonFallback(list);
             return;
         }
 
-        this._loadYoutubeFeed(channel).then((feed) => {
-            const status = document.getElementById('yt-feed-status');
-            const list = document.getElementById('yt-feed-list');
-            if (!status || !list) return;
-            if (!feed || !feed.videos || !feed.videos.length) throw new Error('empty feed');
-            status.style.display = 'none';
-            list.innerHTML = feed.videos.map((v) => this._ytVideoCard(v)).join('');
-            list.querySelectorAll('.yt-video-card').forEach((card) => {
-                card.addEventListener('click', () => this.playYoutubeVideo(card.dataset.videoId, card.dataset.title));
+        // YouTube channel/handle/URL -> live feed of the program uploads.
+        if (info.provider === 'youtube' && info.type === 'channel') {
+            this._loadYoutubeFeed(sourceUrl).then((feed) => {
+                if (!status || !list) return;
+                if (!feed || !feed.videos || !feed.videos.length) throw new Error('empty feed');
+                status.style.display = 'none';
+                list.innerHTML = feed.videos.map((v) => this._ytVideoCard(v)).join('');
+                list.querySelectorAll('.yt-video-card').forEach((card) => {
+                    card.addEventListener('click', () => this.playYoutubeVideo(card.dataset.videoId, card.dataset.title));
+                });
+                const actions = document.getElementById('yt-channel-actions');
+                if (actions && feed.channel && feed.channel.id) {
+                    const watchBtn = document.createElement('button');
+                    watchBtn.type = 'button';
+                    watchBtn.className = 'yt-channel-watch-btn';
+                    watchBtn.innerHTML = '&#9654; Watch channel';
+                    watchBtn.onclick = () => this.playYoutubeChannel(feed.channel.id);
+                    actions.insertBefore(watchBtn, actions.firstChild);
+                }
+                this._appendSermonArchive(list);
+            }).catch(() => {
+                if (status) status.innerHTML = 'Could not load the live feed right now - showing saved sermons.';
+                this._renderLocalSermonFallback(list);
             });
-            const actions = document.getElementById('yt-channel-actions');
-            if (actions && feed.channel && feed.channel.id) {
-                const watchBtn = document.createElement('button');
-                watchBtn.type = 'button';
-                watchBtn.className = 'yt-channel-watch-btn';
-                watchBtn.innerHTML = '&#9654; Watch channel';
-                watchBtn.onclick = () => this.playYoutubeChannel(feed.channel.id);
-                actions.insertBefore(watchBtn, actions.firstChild);
-            }
-        }).catch(() => {
-            const status = document.getElementById('yt-feed-status');
-            if (status) status.innerHTML = 'Could not load the live feed right now - showing saved sermons.';
-            this._renderLocalSermonFallback(document.getElementById('yt-feed-list'));
-        });
+            return;
+        }
+
+        // A single linked program (YouTube video, Facebook video/page, Vimeo,
+        // direct video file or any other external link). Saved sermons stay
+        // listed below as the "previous sermons" backlog.
+        if (status) status.style.display = 'none';
+        if (info.provider === 'youtube' && info.type === 'video') {
+            list.innerHTML = this._ytVideoCard({ videoId: info.videoId, title: 'Linked sermon', published: '', channelName: churchName });
+            const card = list.querySelector('.yt-video-card');
+            if (card) card.addEventListener('click', () => this.playYoutubeVideo(info.videoId, 'Linked sermon'));
+        } else if (info.provider === 'facebook' && info.type === 'video') {
+            list.innerHTML = this._facebookSourceCard(info, churchName);
+            const card = list.querySelector('.yt-source-card');
+            if (card) card.addEventListener('click', () => this._playSermonSource(info, 'Linked Facebook sermon'));
+        } else if (info.provider === 'facebook') {
+            list.innerHTML = this._facebookPageCard(info, churchName);
+        } else {
+            list.innerHTML = this._externalSourceCard(info, churchName);
+            const card = list.querySelector('.yt-source-card');
+            const embeddable = info.provider === 'vimeo' || info.provider === 'media';
+            if (card && embeddable) card.addEventListener('click', () => this._playSermonSource(info, 'Linked sermon'));
+        }
+        this._appendSermonArchive(list);
     },
 
-    // Open a small prompt so the church (admin) can link its YouTube channel.
-    // Works in demo mode (localStorage override) and live mode (church record).
-    promptYoutubeChannel() {
+    // Open a small prompt so the church (admin) can link its sermon source: a
+    // YouTube channel/video, a Facebook page/video, Vimeo or any other program
+    // link. Works in demo mode (localStorage override) and live mode (church
+    // record).
+    promptSermonSource() {
         const current = this.churchContactInfo().youtubeChannel || '';
-        const url = window.prompt('Paste the church YouTube channel link (e.g. https://youtube.com/@YourChurch):', current);
+        const url = window.prompt('Paste the sermon source link (YouTube channel or video, Facebook page or video, Vimeo, or any other program link):', current);
         if (url === null) return;
         const trimmed = String(url).trim();
         if (!trimmed) return;
-        if (!/youtube\.com|youtu\.be|^@/.test(trimmed)) {
-            this.toast('That does not look like a YouTube channel link.', 'error');
+        const looksLikeLink = /^@[A-Za-z0-9_.-]+$/.test(trimmed)
+            || /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+            || /^[a-z0-9-]+(\.[a-z0-9-]+)+([:/?#]|$)/i.test(trimmed);
+        if (!looksLikeLink) {
+            this.toast('That does not look like a link. Paste a YouTube/Facebook/Vimeo link or a channel handle like @YourChurch.', 'error');
             return;
         }
         try { localStorage.setItem('church2_youtube_channel', trimmed); } catch (e) { /* private mode */ }
@@ -6852,8 +7123,18 @@ const ChurchApp = {
         if (this.apiEnabled() && church && window.Church2API) {
             this.apiWrite(() => Church2API.updateChurch(church.id, { youtubeChannel: trimmed }), () => {});
         }
-        this.toast('Church YouTube channel linked.');
+        const provider = this._sermonSourceInfo(trimmed).provider;
+        const label = provider === 'youtube' ? 'YouTube'
+            : provider === 'facebook' ? 'Facebook'
+            : provider === 'vimeo' ? 'Vimeo'
+            : provider === 'media' ? 'video' : 'sermon';
+        this.toast(label + ' sermon source linked.');
         this.renderMobileSermons();
+    },
+
+    // Backwards-compatible alias kept for any older inline callers.
+    promptYoutubeChannel() {
+        return this.promptSermonSource();
     },
 
     async _loadYoutubeFeed(channelUrl) {
@@ -6920,24 +7201,183 @@ const ChurchApp = {
             </div>`).join('') : '<div class="yt-feed-status">No services yet.</div>';
     },
 
+    // Classify a pasted sermon source so the Sermons tab can play it the right
+    // way: YouTube channels get a live feed, YouTube/Facebook/Vimeo videos get
+    // embedded, direct media files use the native player, and anything else is
+    // shown as an external link.
+    _sermonSourceInfo(raw) {
+        const url = String(raw || '').trim();
+        if (!url) return { provider: 'none', url: '' };
+        if (/^@[A-Za-z0-9_.-]+$/.test(url)) return { provider: 'youtube', type: 'channel', url };
+        const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : 'https://' + url;
+        const lower = withScheme.toLowerCase();
+        let m;
+
+        if (/youtube\.com|youtu\.be/.test(lower)) {
+            // Match against the original URL so case-sensitive video ids keep
+            // their exact casing; the domain test above is case-insensitive.
+            m = /(?:youtube\.com\/(?:watch\?[^#]*?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/.exec(withScheme);
+            if (m) return { provider: 'youtube', type: 'video', videoId: m[1], url: withScheme };
+            if (/youtube\.com\/(@|channel\/|c\/|user\/)/.test(lower)) return { provider: 'youtube', type: 'channel', url: withScheme };
+            // Handle, user or playlist URLs the server resolver can still try.
+            return { provider: 'youtube', type: 'channel', url: withScheme };
+        }
+
+        if (/facebook\.com|fb\.watch/.test(lower)) {
+            m = /facebook\.com\/(?:watch\/?\?(?:[^#]*&)?v=(\d+)|([^/?#]+)\/videos\/(\d+))/.exec(withScheme);
+            if (m) {
+                const pageName = m[2] || '';
+                const videoId = m[1] || m[3] || '';
+                const canonical = (pageName && videoId)
+                    ? 'https://www.facebook.com/' + pageName + '/videos/' + videoId + '/'
+                    : '';
+                return { provider: 'facebook', type: 'video', videoId, pageName, canonical, url: withScheme };
+            }
+            if (/fb\.watch/.test(lower)) return { provider: 'facebook', type: 'video', videoId: '', pageName: '', canonical: '', url: withScheme };
+            return { provider: 'facebook', type: 'page', url: withScheme };
+        }
+
+        m = /vimeo\.com\/(\d+)/.exec(withScheme);
+        if (m) return { provider: 'vimeo', type: 'video', videoId: m[1], url: withScheme };
+
+        if (/\.(mp4|webm|ogg|ogv|mov|m4v|mp3|m4a|wav)(\?.*)?$/i.test(url)) return { provider: 'media', type: 'file', url: withScheme };
+        return { provider: 'generic', type: 'link', url: withScheme };
+    },
+
+    _facebookSourceCard(info, churchName) {
+        const openUrl = info.canonical || info.url;
+        return `
+            <div class="yt-video-card yt-source-card" role="button" tabindex="0" aria-label="Play the linked Facebook sermon">
+                <div class="yt-thumb" style="display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#1e1b4b,#311042);">
+                    <span style="font-size:1.4rem; color:#fff;">&#9654;</span>
+                </div>
+                <div class="yt-video-meta">
+                    <strong class="yt-video-title">Linked Facebook sermon</strong>
+                    <span class="yt-video-sub">${esc(churchName)} &middot; tap to play below</span>
+                </div>
+            </div>
+            <a class="yt-open-link" href="${esc(openUrl)}" target="_blank" rel="noopener">Watch on Facebook</a>`;
+    },
+
+    _facebookPageCard(info, churchName) {
+        const path = info.url.replace(/\/?(\?.*)?$/, '');
+        const videosUrl = /\/videos$/i.test(path) ? path : path + '/videos';
+        return `
+            <div class="yt-video-card">
+                <div class="yt-thumb" style="display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#1e1b4b,#311042);">
+                    <span style="font-size:1.4rem; color:#fff;">&#9654;</span>
+                </div>
+                <div class="yt-video-meta">
+                    <strong class="yt-video-title">Sermons on Facebook</strong>
+                    <span class="yt-video-sub">${esc(churchName)} &middot; latest and previous programs</span>
+                </div>
+            </div>
+            <div class="yt-source-note">Facebook does not allow other apps to list a page&rsquo;s videos automatically, so this opens the page&rsquo;s video library where every program (and past ones) is available.</div>
+            <a class="yt-open-link" href="${esc(videosUrl)}" target="_blank" rel="noopener">Open all sermons on Facebook</a>`;
+    },
+
+    _externalSourceCard(info, churchName) {
+        const isEmbeddable = info.provider === 'vimeo' || info.provider === 'media';
+        const providerLabel = info.provider === 'vimeo' ? 'Vimeo sermon link'
+            : info.provider === 'media' ? 'Video link' : 'Sermon link';
+        return `
+            <div class="yt-video-card${isEmbeddable ? ' yt-source-card' : ''}" role="${isEmbeddable ? 'button' : 'presentation'}" tabindex="${isEmbeddable ? '0' : '-1'}">
+                <div class="yt-thumb" style="display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#1e1b4b,#311042);">
+                    <span style="font-size:1.4rem; color:#fff;">&#9654;</span>
+                </div>
+                <div class="yt-video-meta">
+                    <strong class="yt-video-title">${esc(providerLabel)}</strong>
+                    <span class="yt-video-sub">${esc(churchName)}</span>
+                </div>
+            </div>
+            <a class="yt-open-link" href="${esc(info.url)}" target="_blank" rel="noopener">Open linked sermon</a>`;
+    },
+
+    _youtubePlayerHtml(videoId, title) {
+        return `<div class="yt-player-wrap">
+                <iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0" title="${esc(title || 'Church service video')}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+            </div>`;
+    },
+
+    _facebookPlayerHtml(info, title) {
+        const href = info.canonical || info.url;
+        const embeddable = !!info.videoId && /facebook\.com/.test(href);
+        return embeddable
+            ? `<div class="yt-player-wrap"><iframe src="https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(href)}&show_text=false" title="${esc(title || 'Facebook sermon video')}" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowfullscreen scrolling="no"></iframe></div>
+               <a class="yt-open-link" href="${esc(href)}" target="_blank" rel="noopener">Watch on Facebook</a>`
+            : `<div style="padding:14px 12px; text-align:center;">
+                   <div style="font-size:0.8rem; color:var(--mob-sub); margin-bottom:10px;">This sermon is hosted on Facebook.</div>
+                   <a class="yt-open-link" href="${esc(info.url)}" target="_blank" rel="noopener">Watch on Facebook</a>
+               </div>`;
+    },
+
+    _savedSermonCards() {
+        const sermons = this.db.sermons || [];
+        return sermons.map((s) => `
+            <div class="mobile-sermon-card" onclick="ChurchApp.playMobileSermon('${esc(s.id)}')">
+                <div class="mobile-sermon-thumb" style="background: linear-gradient(135deg, #1e1b4b, #311042); display:flex; justify-content:center; align-items:center;">
+                    <span style="font-size:1.5rem; color:#fff;">&#9654;</span>
+                </div>
+                <div style="padding:10px;">
+                    <strong style="font-size:0.85rem; color:var(--mob-text); display:block;">${esc(s.title)}</strong>
+                    <span style="font-size:0.7rem; color:var(--mob-sub); display:block;">By ${esc(s.preacher)} | ${esc(s.duration)}</span>
+                </div>
+            </div>`).join('');
+    },
+
+    _appendSermonArchive(listEl) {
+        if (!listEl) return;
+        const saved = this.db.sermons || [];
+        if (!saved.length) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'yt-archive-section';
+        wrap.innerHTML = '<div class="yt-archive-heading">Earlier sermons</div>' + this._savedSermonCards();
+        listEl.appendChild(wrap);
+    },
+
     playMobileSermon(sermonId) {
         const sermon = this.db.sermons.find(s => s.id === sermonId);
         if (!sermon) return;
+        const info = this._sermonSourceInfo(sermon.mediaUrl || '');
+        this._playSermonSource(info, sermon.title);
+    },
 
+    // Plays any sermon/program link inside the simulator: YouTube, Facebook and
+    // Vimeo embed inline, direct video/audio files use the native player, and
+    // unknown links fall back to an "open in new tab" action instead of a
+    // broken <video> tag.
+    _playSermonSource(info, title) {
         const playerContainer = document.getElementById('mobile-sermon-player-container');
+        if (!playerContainer) return;
+        const safeTitle = title || 'Now playing';
+        let body = '';
+        if (info.provider === 'youtube' && info.type === 'video' && info.videoId) {
+            body = this._youtubePlayerHtml(info.videoId, safeTitle);
+        } else if (info.provider === 'facebook' && info.type === 'video') {
+            body = this._facebookPlayerHtml(info, safeTitle);
+        } else if (info.provider === 'vimeo' && info.videoId) {
+            body = `<div class="yt-player-wrap"><iframe src="https://player.vimeo.com/video/${encodeURIComponent(info.videoId)}" title="${esc(safeTitle)}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>`;
+        } else if (info.provider === 'media') {
+            body = `<video src="${esc(info.url)}" controls autoplay style="width:100%; border-radius:6px; max-height:120px;"></video>`;
+        } else {
+            body = `<div style="padding:14px 12px; text-align:center;">
+                        <div style="font-size:0.8rem; color:var(--mob-sub); margin-bottom:10px;">This sermon is hosted outside the app.</div>
+                        <a class="yt-open-link" href="${esc(info.url)}" target="_blank" rel="noopener">Open the sermon video</a>
+                    </div>`;
+        }
         playerContainer.style.display = 'block';
         playerContainer.innerHTML = `
             <div class="mobile-sermon-player" style="background: var(--mob-card-solid); padding:10px; border-radius:8px; border:1px solid var(--mob-border); margin-bottom:12px;">
-                <video src="${encodeURI(sermon.mediaUrl)}" controls autoplay style="width:100%; border-radius:6px; max-height:120px;"></video>
+                ${body}
                 <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
                     <div style="min-width:0;">
-                        <strong style="font-size:0.85rem; color:var(--mob-text); display:block;">Playing: ${esc(sermon.title)}</strong>
-                        <span style="font-size:0.7rem; color:var(--mob-sub);">Branch: ${esc(sermon.branchName)}</span>
+                        <strong style="font-size:0.85rem; color:var(--mob-text); display:block;">Playing: ${esc(safeTitle)}</strong>
                     </div>
                     <button type="button" class="yt-close-player" onclick="document.getElementById('mobile-sermon-player-container').style.display='none'">Close</button>
                 </div>
             </div>
         `;
+        if (playerContainer.scrollIntoView) playerContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     },
 
     playYoutubeVideo(videoId, title) {
@@ -7004,10 +7444,11 @@ const ChurchApp = {
 
     getReadingState() {
         this.db.readingState = this.db.readingState || {};
-        if (!this.db.readingState.m1) {
-            this.db.readingState.m1 = { streak: 0, lastReadDate: null, plans: {} };
+        const key = this.simulatedMemberId();
+        if (!this.db.readingState[key]) {
+            this.db.readingState[key] = { streak: 0, lastReadDate: null, plans: {} };
         }
-        return this.db.readingState.m1;
+        return this.db.readingState[key];
     },
 
     renderReadingPlans() {
@@ -7190,9 +7631,129 @@ const ChurchApp = {
         return out;
     },
 
+    biblePrevPage() {
+        const current = Number(this._biblePageIndex) || 0;
+        if (current > 0) {
+            this._biblePageIndex = current - 1;
+            this.renderMobileBible();
+            this._scrollBibleReader();
+            return;
+        }
+        // On the first page: step back to the previous chapter's last page.
+        if (this._canBibleShift(-1)) this._bibleShiftChapter(-1, true);
+    },
+
+    bibleNextPage() {
+        const current = Number(this._biblePageIndex) || 0;
+        if (current + 1 < this._currentBiblePageCount()) {
+            this._biblePageIndex = current + 1;
+            this.renderMobileBible();
+            this._scrollBibleReader();
+            return;
+        }
+        // On the last page: continue into the next chapter.
+        if (this._canBibleShift(1)) this._bibleShiftChapter(1);
+    },
+
+    biblePrevChapter() { this._bibleShiftChapter(-1); },
+    bibleNextChapter() { this._bibleShiftChapter(1); },
+
+    _currentBiblePages() {
+        const data = this._kjvData || [];
+        const book = this.kjvBook(this.session.bibleBook);
+        if (!data.length || !book) return [];
+        const ch = Math.max(1, Number(this.session.bibleChapter) || 1);
+        const verses = book.chapters && book.chapters[ch - 1];
+        if (!Array.isArray(verses)) return [];
+        const items = verses.map((text, i) => ({ text, num: i + 1 }));
+        return this._paginateVerses(items);
+    },
+
+    _currentBiblePageCount() {
+        return this._currentBiblePages().length;
+    },
+
+    _bibleShiftChapter(delta, landOnLastPage) {
+        const data = this._kjvData || [];
+        if (!data.length) return;
+        let bi = data.findIndex((b) => (b.name || b.book) === this.session.bibleBook);
+        if (bi < 0) bi = 0;
+        let ch = Math.max(1, Number(this.session.bibleChapter) || 1) + delta;
+        const book = data[bi];
+        const last = (book.chapters || []).length;
+        if (ch < 1) {
+            if (bi === 0) return;
+            bi -= 1;
+            ch = data[bi].chapters.length;
+        } else if (ch > last) {
+            if (bi >= data.length - 1) return;
+            bi += 1;
+            ch = 1;
+        }
+        this.session.bibleBook = data[bi].name || data[bi].book;
+        this.session.bibleChapter = String(ch);
+        const bookSel = document.getElementById('mobile-bible-book');
+        if (bookSel) bookSel.value = this.session.bibleBook;
+        this.populateBibleChapters(this.session.bibleBook);
+        const chapterSel = document.getElementById('mobile-bible-chapter');
+        if (chapterSel) chapterSel.value = this.session.bibleChapter;
+        this._biblePageIndex = landOnLastPage ? Math.max(0, this._currentBiblePageCount() - 1) : 0;
+        this.renderMobileBible();
+        this._scrollBibleReader();
+    },
+
+    _canBibleShift(delta) {
+        const data = this._kjvData || [];
+        if (!data.length) return false;
+        let bi = data.findIndex((b) => (b.name || b.book) === this.session.bibleBook);
+        if (bi < 0) bi = 0;
+        const ch = Math.max(1, Number(this.session.bibleChapter) || 1);
+        const last = (data[bi].chapters || []).length;
+        if (delta < 0) return ch > 1 || bi > 0;
+        return ch < last || bi < data.length - 1;
+    },
+
+    // Split a chapter into pages that roughly fit one phone screen. Verses
+    // are never split - a new page starts at the next verse boundary.
+    _paginateVerses(verseItems) {
+        const PER_PAGE_CHARS = 750;
+        const pages = [];
+        let page = [];
+        let used = 0;
+        verseItems.forEach((item) => {
+            const add = this.kjvClean(item.text).length + 3;
+            if (page.length && used + add > PER_PAGE_CHARS) {
+                pages.push(page);
+                page = [];
+                used = 0;
+            }
+            page.push(item);
+            used += add;
+        });
+        if (page.length) pages.push(page);
+        return pages.length ? pages : [verseItems];
+    },
+
+    bibleSetMode(mode) {
+        this.session.bibleMode = mode === 'scroll' ? 'scroll' : 'pages';
+        this._biblePageIndex = 0;
+        this.renderMobileBible();
+    },
+
+    bibleSetTheme(theme) {
+        this.session.bibleTheme = ['paper', 'modern', 'night'].includes(theme) ? theme : 'paper';
+        this.renderMobileBible();
+    },
+
+    _scrollBibleReader() {
+        const el = document.getElementById('mobile-bible-verses');
+        if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+
     _renderBibleChapter() {
         const verseContainer = document.getElementById('mobile-bible-verses');
         if (!verseContainer) return;
+        verseContainer.dataset.theme = this.session.bibleTheme || 'paper';
         const searchInput = document.getElementById('mobile-bible-search').value.trim().toLowerCase();
         const bookSel = document.getElementById('mobile-bible-book');
         const chapterSel = document.getElementById('mobile-bible-chapter');
@@ -7221,25 +7782,53 @@ const ChurchApp = {
                 });
                 verseContainer.innerHTML = shown ? hits.join('') : `<div class="bible-page-empty">No verses found matching query.</div>`;
             } else {
-                // Reader mode - the chapter laid out like a printed book page
-                // with a drop cap and superscript verse numbers.
-                const firstClean = this.kjvClean(verses[0]);
-                const cap = firstClean.charAt(0);
-                const disp0 = this.kjvDisplay(verses[0]);
-                const useCap = /^[A-Za-z]/.test(cap) && disp0.startsWith(cap);
-                const capHtml = useCap ? `<span class="bible-drop-cap">${esc(cap)}</span>` : '';
-                const rest0 = useCap ? disp0.slice(1) : disp0;
-                const flow = verses.map((text, i) => {
-                    const display = i === 0 ? (capHtml + rest0) : this.kjvDisplay(text);
-                    return `<sup class="bible-verse-num">${i + 1}</sup>${display}`;
-                }).join(' ');
-                verseContainer.innerHTML = `
-                    <div class="bible-page">
-                        <div class="bible-page-ornament">&#10087;</div>
-                        <h2 class="bible-chapter-book">${esc(book.name)}</h2>
-                        <div class="bible-chapter-rule"><span>Chapter ${this.romanNumeral(chapter)}</span></div>
-                        <p class="bible-verse-flow">${flow}</p>
+                // Reader mode: the chapter is laid out like a printed book.
+                // "Pages" splits long chapters into screen-sized pages with
+                // page and chapter navigation; "Scroll" keeps the whole chapter
+                // on a single flowing page.
+                const verseItems = verses.map((text, i) => ({ text, num: i + 1 }));
+                const readerMode = this.session.bibleMode === 'scroll' ? 'scroll' : 'pages';
+                this.session.bibleMode = readerMode;
+                verseContainer.dataset.theme = this.session.bibleTheme || 'paper';
+                const pages = readerMode === 'pages' ? this._paginateVerses(verseItems) : [verseItems];
+                let pageIndex = Number(this._biblePageIndex) || 0;
+                if (pageIndex >= pages.length) pageIndex = pages.length - 1;
+                if (pageIndex < 0) pageIndex = 0;
+                this._biblePageIndex = pageIndex;
+                const currentPage = pages[pageIndex] || verseItems;
+                const buildBiblePage = (items, withCap) => {
+                    const firstClean = this.kjvClean(items[0].text);
+                    const cap = firstClean.charAt(0);
+                    const disp0 = this.kjvDisplay(items[0].text);
+                    const useCap = withCap && /^[A-Za-z]/.test(cap) && disp0.startsWith(cap);
+                    const capHtml = useCap ? `<span class="bible-drop-cap">${esc(cap)}</span>` : '';
+                    const rest0 = useCap ? disp0.slice(1) : disp0;
+                    const flow = items.map((it, idx) => {
+                        const display = (idx === 0 && withCap) ? (capHtml + rest0) : this.kjvDisplay(it.text);
+                        return `<sup class="bible-verse-num">${it.num}</sup>${display}`;
+                    }).join(' ');
+                    const head = withCap
+                        ? `<div class="bible-page-ornament">&#10087;</div>
+                           <h2 class="bible-chapter-book">${esc(book.name)}</h2>
+                           <div class="bible-chapter-rule"><span>Chapter ${this.romanNumeral(chapter)}</span></div>`
+                        : '<div class="bible-page-continue">&hellip; continued</div>';
+                    return head + `<p class="bible-verse-flow">${flow}</p>`;
+                };
+                let readerHtml = `<div class="bible-page">${buildBiblePage(currentPage, pageIndex === 0)}</div>`;
+                if (readerMode === 'pages') {
+                    const prevDisabled = pageIndex === 0 && !this._canBibleShift(-1);
+                    const nextDisabled = pageIndex >= pages.length - 1 && !this._canBibleShift(1);
+                    readerHtml += `<div class="bible-page-nav">
+                        <button type="button" class="bible-nav-btn" onclick="ChurchApp.biblePrevPage()"${prevDisabled ? ' disabled' : ''}>&#8249; Previous page</button>
+                        <span class="bible-page-count">Page ${pageIndex + 1} of ${pages.length}</span>
+                        <button type="button" class="bible-nav-btn" onclick="ChurchApp.bibleNextPage()"${nextDisabled ? ' disabled' : ''}>Next page &#8250;</button>
                     </div>`;
+                    readerHtml += `<div class="bible-chapter-nav">
+                        <button type="button" class="bible-chapter-btn" onclick="ChurchApp.biblePrevChapter()"${this._canBibleShift(-1) ? '' : ' disabled'}>&#8249; Previous chapter</button>
+                        <button type="button" class="bible-chapter-btn" onclick="ChurchApp.bibleNextChapter()"${this._canBibleShift(1) ? '' : ' disabled'}>Next chapter &#8250;</button>
+                    </div>`;
+                }
+                verseContainer.innerHTML = readerHtml;
             }
         } else {
             // Mock fallback - used only until js/kjv.json is available.
@@ -7286,17 +7875,33 @@ const ChurchApp = {
         document.getElementById('mobile-bible-search').oninput = () => this.renderMobileBible();
         document.getElementById('mobile-bible-book').onchange = (e) => {
             this.session.bibleBook = e.target.value;
+            this._biblePageIndex = 0;
             if (this._kjvData) this.populateBibleChapters(e.target.value);
             this.renderMobileBible();
         };
         document.getElementById('mobile-bible-chapter').onchange = (e) => {
             this.session.bibleChapter = e.target.value;
+            this._biblePageIndex = 0;
             this.renderMobileBible();
         };
         document.getElementById('mobile-bible-version').onchange = (e) => {
             this.session.bibleVersion = e.target.value;
             this.renderMobileBible();
         };
+
+        // Reader view controls: Pages/Scroll mode + Paper/Modern/Night style.
+        const modeButtons = document.querySelectorAll('#bible-mode-seg .bible-seg-btn');
+        const themeButtons = document.querySelectorAll('#bible-theme-seg .bible-seg-btn');
+        const activeMode = this.session.bibleMode === 'scroll' ? 'scroll' : 'pages';
+        const activeTheme = this.session.bibleTheme || 'paper';
+        modeButtons.forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.value === activeMode);
+            btn.onclick = () => this.bibleSetMode(btn.dataset.value);
+        });
+        themeButtons.forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.value === activeTheme);
+            btn.onclick = () => this.bibleSetTheme(btn.dataset.value);
+        });
     },
 
     // Processing fee model used for the "cover the fees" option (card rate).
@@ -7313,19 +7918,40 @@ const ChurchApp = {
     },
 
     renderMobileGive() {
-        // Generates dropdown options for giving branches
+        // Generates dropdown options for giving branches. A signed-in member
+        // is locked to their own campus so they can never view or give into
+        // another branch's funds; only an admin preview may pick any campus.
         const select = document.getElementById('mobile-giving-branch');
         const prevBranch = select.value || this.session.mobileGivingBranch || '';
         select.innerHTML = '';
-        this.db.branches.forEach(b => {
+        const simMember = this.simulatedMember();
+        const memberBranch = simMember ? simMember.branchId : '';
+        const userBranch = (this.session && this.session.currentUser && this.session.currentUser.branchId) || '';
+        const realMember = this.isRealMemberOnPhone();
+        const previewPicked = !realMember && Boolean(this.session.mobilePreviewBranch);
+        // Lock the Give campus to the simulated member's own branch so the
+        // phone never shows or records giving into another campus. A fresh
+        // branch with no member record yet keeps the full list for preview.
+        const lockBranch = realMember
+            ? (memberBranch || userBranch)
+            : (previewPicked ? memberBranch : '');
+        const branchOptions = lockBranch
+            ? this.db.branches.filter(b => b.id === lockBranch)
+            : (realMember ? [] : this.db.branches);
+        branchOptions.forEach(b => {
             const opt = document.createElement('option');
             opt.value = b.id;
             opt.text = b.name;
             select.appendChild(opt);
         });
-        if (prevBranch && [...select.options].some(o => o.value === prevBranch)) {
-            select.value = prevBranch;
-        }
+        if (realMember || lockBranch) select.setAttribute('disabled', 'true');
+        else select.removeAttribute('disabled');
+        const keepStored = !realMember || !memberBranch || prevBranch === memberBranch;
+        const preferred = (keepStored && prevBranch && [...select.options].some(o => o.value === prevBranch))
+            ? prevBranch
+            : (memberBranch || (this.db.branches[0] && this.db.branches[0].id) || '');
+        if (preferred && [...select.options].some(o => o.value === preferred)) select.value = preferred;
+        this.session.mobileGivingBranch = select.value;
         // The Financial Summary and ledger follow the branch the member picks.
         select.onchange = () => {
             this.session.mobileGivingBranch = select.value;
@@ -7355,6 +7981,16 @@ const ChurchApp = {
         const methodSel = document.getElementById('mobile-giving-method');
         const feesRow = document.getElementById('cover-fees-row');
         const mpesaHint = document.getElementById('mpesa-hint');
+        const phoneRow = document.getElementById('mobile-giving-phone-row');
+        const phoneInput = document.getElementById('mobile-giving-phone');
+
+        // Prefill the M-Pesa number from the giver's profile (editable - many
+        // people give from a different line than the one on file).
+        if (phoneInput) {
+            const giver = this.db.members.find(m => m.id === this.simulatedMemberId());
+            const onFile = giver && giver.phone ? String(giver.phone).replace(/^\+/, '') : '';
+            if (onFile) phoneInput.value = onFile;
+        }
 
         // Surface the paybill details from the brand config rather than
         // hardcoding them in markup.
@@ -7376,6 +8012,7 @@ const ChurchApp = {
             if (feesRow) feesRow.style.display = fee > 0 ? '' : 'none';
             if (fee === 0 && coverFees) coverFees.checked = false;
             if (mpesaHint) mpesaHint.style.display = method === 'M-Pesa' ? '' : 'none';
+            if (phoneRow) phoneRow.style.display = method === 'M-Pesa' ? '' : 'none';
         };
         if (methodSel) methodSel.onchange = updateFee;
 
@@ -7405,6 +8042,14 @@ const ChurchApp = {
         // toward "Pledge Target" reduces it. Refresh when the fund changes.
         this.populateMobileGivingFunds();
         this.renderMobilePledgePanel();
+        const categorySel = document.getElementById('mobile-giving-category');
+        if (categorySel) {
+            categorySel.onchange = () => {
+                this.renderMobilePledgePanel();
+                this.updateMobileGivingNote();
+            };
+            this.updateMobileGivingNote();
+        }
 
         // Mirror the web console Pledges & Giving tab: project/pledge
         // campaigns and the contribution ledger. The Financial Summary sums
@@ -7415,6 +8060,23 @@ const ChurchApp = {
         this.renderMobileFinancialSummary(givingBranch);
         this.renderGivingInsights(this.session.currentBranch, document.getElementById('mobile-giving-insights'), true);
         this.renderMobileLedger(givingBranch);
+    },
+
+    // Make the meaning of "pledge" explicit in the Make-a-Gift form: a pledge
+    // is money promised but not yet given - only money actually sent now counts
+    // as given, and "Pledge Payment" pays down a promise made earlier.
+    updateMobileGivingNote() {
+        const noteEl = document.getElementById('mobile-giving-category-note');
+        if (!noteEl) return;
+        const categorySel = document.getElementById('mobile-giving-category');
+        const category = categorySel ? categorySel.value : '';
+        if (category === 'Pledge') {
+            noteEl.textContent = 'Pledge Payment: money you promised earlier and are now actually giving. It reduces your pledge balance shown above - only this amount counts as given now.';
+        } else if (category.indexOf('campaign:') === 0) {
+            noteEl.textContent = 'Project gift: this money is given now to the project you chose above.';
+        } else {
+            noteEl.textContent = 'Gift: this money is given now. A pledge is different - it is money you promise to give later, before you have actually given it.';
+        }
     },
 
     // "Contribute to My Pledge" in the Give tab: the member records the amount
@@ -7678,7 +8340,7 @@ const ChurchApp = {
         this.renderMobileProjects();
     },
 
-    handleMobileGiving() {
+    async handleMobileGiving() {
         const branchId = document.getElementById('mobile-giving-branch').value;
         let amount = parseFloat(document.getElementById('mobile-giving-amount').value);
         const category = document.getElementById('mobile-giving-category').value;
@@ -7704,9 +8366,14 @@ const ChurchApp = {
 
         const branchObj = this.db.branches.find(b => b.id === branchId);
 
-        // Assume logged-in member John Kamau (m1) is doing the giving
-        const loggedInMemberId = 'm1';
+        // The logged-in member does the giving - their own record drives the
+        // receipt and the pledge balance shown.
+        const loggedInMemberId = this.simulatedMemberId();
         const memberObj = this.db.members.find(m => m.id === loggedInMemberId);
+        if (!memberObj) {
+            this.toast('Could not find your member details - please log in again.', 'error');
+            return;
+        }
 
         // "Giving On Behalf Of" is an editable name: blank (or "Myself") means
         // the giver themself; anything else is the person the gift is for.
@@ -7721,6 +8388,24 @@ const ChurchApp = {
             if (pledge.amount <= 0) { this.toast('No pledge recorded for you yet - ask the church office to set one up.', 'error'); return; }
             if (amount > pledge.balance) { this.toast(`Amount exceeds your remaining pledge balance of ${window.money(pledge.balance)}.`, 'error'); return; }
             pledgeBalanceAfter = Math.max(0, pledge.balance - amount);
+        }
+
+        // Real M-Pesa STK Push (backend connected): ask the server to prompt the
+        // phone and record the gift only when Safaricom confirms payment. When
+        // the backend has no M-Pesa configured yet, fall back to the demo flow.
+        if (method === 'M-Pesa' && this.apiEnabled()) {
+            const phoneValue = ((document.getElementById('mobile-giving-phone') || {}).value || '').trim();
+            const started = await this.initiateMpesaStk({
+                amount,
+                category: effectiveCategory,
+                branchId,
+                memberObj,
+                campaign,
+                onBehalfOf,
+                feeAdded,
+                phone: phoneValue,
+            });
+            if (started) return;
         }
 
         const newTx = {
@@ -7814,9 +8499,196 @@ const ChurchApp = {
         this.renderAll();
     },
 
+    // ---- M-Pesa STK Push (live) -----------------------------------------
+
+    // Ask the backend to push an STK prompt to the giver's phone. Resolves true
+    // when the prompt was actually started (the gift awaits Safaricom's
+    // confirmation), or false when the caller should use the demo flow.
+    initiateMpesaStk({ amount, category, branchId, memberObj, campaign, onBehalfOf, feeAdded, phone }) {
+        const payerPhone = String(phone || '').trim().replace(/^\+/, '');
+        const digits = payerPhone.replace(/\D/g, '');
+        const looksValid = digits.length >= 9 && /^(\d{12}|0\d{9}|\d{9})$/.test(digits);
+        if (!payerPhone || !looksValid) {
+            this.toast('Enter a valid M-Pesa phone number (e.g. 0712 345 678) to continue.', 'error');
+            return Promise.resolve(false);
+        }
+        const api = window.Church2API;
+        if (!api || !api.mpesaStkPush) return Promise.resolve(false);
+
+        this._mpesaPending = { amount, category, branchId, memberObj, campaign, onBehalfOf, feeAdded };
+        return api.mpesaStkPush({
+            memberId: memberObj ? memberObj.id : null,
+            memberName: memberObj ? `${memberObj.firstName} ${memberObj.lastName}` : null,
+            phone: digits,
+            amount,
+            category,
+            branchId,
+        })
+            .then((r) => {
+                if (!r || !r.checkoutRequestId) throw new Error('No CheckoutRequestID returned by the server');
+                this._mpesaCheckoutId = r.checkoutRequestId;
+                this._mpesaPollTries = 0;
+                this.showMpesaPending(r.phone || digits);
+                return true;
+            })
+            .catch((e) => {
+                console.error('M-Pesa STK start failed:', e);
+                delete this._mpesaPending;
+                const msg = (e && (e.code === 'MPESA_NOT_CONFIGURED' || e.status === 503))
+                    ? 'Live M-Pesa is not switched on in this server yet - gift recorded as a manual M-Pesa entry (demo).'
+                    : 'Could not start the M-Pesa prompt - gift recorded as a manual M-Pesa entry (demo).';
+                if (this.toast) this.toast(msg, 'error');
+                return false;
+            });
+    },
+
+    showMpesaPending(phone) {
+        const modal = document.getElementById('mobile-giving-success-overlay');
+        if (!modal) return;
+        const pretty = String(phone || '').replace(/^254(\d{3})(\d{3})(\d{3})$/, '+254 $1 $2 $3');
+        const p = this._mpesaPending || {};
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+            <div style="background:#1c1c2d; padding:20px; border-radius:12px; border:1px solid rgba(255,255,255,0.1); width:85%; max-width:280px; text-align:center;">
+                <div style="font-size:2rem; line-height:1;">&#128241;</div>
+                <h4 style="color:#fff; margin:8px 0 6px;">Check your phone</h4>
+                <p style="font-size:0.75rem; color:#9ca3af; margin:4px 0;">
+                    An M-Pesa prompt was sent to <strong style="color:#fff;">${esc(pretty)}</strong>.
+                    Enter your PIN to complete this gift of <strong style="color:#fff;">${money(p.amount || 0)}</strong>.
+                </p>
+                <p id="mpesa-pending-status" style="font-size:0.7rem; color:#fbbf24; margin-top:6px;">Waiting for Safaricom to confirmâ€¦</p>
+                <button type="button" class="btn btn-primary-gradient btn-sm" style="margin-top:14px; width:100%;" onclick="ChurchApp.cancelMpesaPending()">Cancel</button>
+            </div>
+        `;
+        this._mpesaPollTimer = setInterval(() => { this.pollMpesaPending(); }, 2500);
+        // Stop polling after 2 minutes. A late callback still records the gift
+        // server-side, so nothing is ever lost.
+        this._mpesaGiveUp = setTimeout(() => {
+            if (!this._mpesaCheckoutId) return;
+            const statusEl = document.getElementById('mpesa-pending-status');
+            if (statusEl) statusEl.textContent = 'No confirmation yet - if you approved it, it will appear here shortly.';
+        }, 120000);
+    },
+
+    pollMpesaPending() {
+        if (!this._mpesaCheckoutId) return;
+        const api = window.Church2API;
+        if (!api || !api.mpesaPaymentStatus) return;
+        this._mpesaPollTries = (this._mpesaPollTries || 0) + 1;
+        if (this._mpesaPollTries > 60) { this.cancelMpesaPending(false); return; }
+        api.mpesaPaymentStatus(this._mpesaCheckoutId)
+            .then((st) => {
+                if (!st) return;
+                if (st.status === 'success') this.finishMpesaGift(st);
+                else if (st.status !== 'pending') this.failMpesaPending(st);
+                else {
+                    const el = document.getElementById('mpesa-pending-status');
+                    if (el) el.textContent = 'Waiting for Safaricom to confirmâ€¦ (enter your PIN if the prompt is still open)';
+                }
+            })
+            .catch(() => { /* network blip - keep polling */ });
+    },
+
+    finishMpesaGift(payment) {
+        this.cancelMpesaPending(false);
+        const p = this._mpesaPending || {};
+        const memberObj = p.memberObj;
+        const amount = Number(payment.amount != null ? payment.amount : p.amount);
+        const branchId = p.branchId;
+        const branchObj = this.db.branches.find(b => b.id === branchId);
+        const memberId = payment.member_id || (memberObj && memberObj.id);
+        const receipt = payment.mpesa_receipt || `REC-2026-${Math.floor(Math.random() * 90000) + 10000}`;
+        const newTx = {
+            id: payment.transaction_id || `t_${Date.now()}`,
+            branchId,
+            branchName: branchObj ? branchObj.name : branchId,
+            memberId: memberId || null,
+            memberName: payment.member_name || (memberObj ? `${memberObj.firstName} ${memberObj.lastName}` : 'Anonymous'),
+            amount,
+            category: p.category || 'Offering',
+            campaignId: p.campaign ? p.campaign.id : null,
+            campaignName: p.campaign ? p.campaign.name : null,
+            date: new Date().toISOString().split('T')[0],
+            paymentMethod: 'M-Pesa',
+            receiptNumber: receipt,
+            onBehalfOf: p.onBehalfOf || null
+        };
+        this.db.transactions.unshift(newTx);
+        if (memberObj) {
+            memberObj.engagement_score = Math.min((memberObj.engagement_score || 0) + 5, 100);
+            if (p.category === 'Pledge' && !p.campaign) {
+                memberObj.pledgePaid = Math.min(parseFloat(memberObj.pledgeAmount) || 0, (parseFloat(memberObj.pledgePaid) || 0) + amount);
+            }
+        }
+        this.saveDB();
+        if (memberObj) this.syncMemberProfile(memberObj);
+        this.toast(`Gift confirmed! M-Pesa receipt ${receipt}.`);
+        this.renderAll();
+        this.renderMobileGive();
+        const modal = document.getElementById('mobile-giving-success-overlay');
+        if (modal) {
+            modal.style.display = 'flex';
+            modal.innerHTML = `
+                <div style="background:#1c1c2d; padding:20px; border-radius:12px; border:1px solid rgba(255,255,255,0.1); width:85%; max-width:280px; text-align:center;">
+                    <div style="font-size:2.4rem; line-height:1;">&#10004;&#65039;</div>
+                    <h4 style="color:#fff; margin-top:8px;">Giving Confirmed!</h4>
+                    <p style="font-size:0.75rem; color:#9ca3af; margin-top:5px;">
+                        <strong style="color:#fff;">${money(amount)}</strong> received for ${esc(p.campaign ? p.campaign.name : (p.category || 'Offering'))} via M-Pesa.
+                    </p>
+                    <p style="font-size:0.7rem; color:#93c5fd; font-weight:bold; margin-top:8px;">Receipt: ${esc(receipt)}</p>
+                    <button type="button" class="btn btn-primary-gradient btn-sm" style="margin-top:15px; width:100%;" onclick="ChurchApp.closeMpesaOverlay()">Awesome</button>
+                </div>
+            `;
+        }
+        document.getElementById('mobile-giving-form').reset();
+        delete this._mpesaPending;
+    },
+
+    failMpesaPending(payment) {
+        this.cancelMpesaPending(false);
+        const p = this._mpesaPending || {};
+        const reason = payment && payment.result_desc ? String(payment.result_desc) : '';
+        const label = payment && payment.status === 'cancelled'
+            ? 'You cancelled the payment.'
+            : (payment && payment.status === 'timeout' ? 'The prompt timed out.' : 'The payment was not completed.');
+        this.toast(`M-Pesa: ${label}${reason && reason !== 'Success' ? ' ' + reason : ''}`, 'error');
+        const modal = document.getElementById('mobile-giving-success-overlay');
+        if (modal) {
+            modal.style.display = 'flex';
+            modal.innerHTML = `
+                <div style="background:#1c1c2d; padding:20px; border-radius:12px; border:1px solid rgba(255,255,255,0.1); width:85%; max-width:280px; text-align:center;">
+                    <h4 style="color:#fff; margin-top:8px;">Payment not completed</h4>
+                    <p style="font-size:0.75rem; color:#9ca3af; margin-top:5px;">${esc(label)}${reason && reason !== 'Success' ? ' ' + esc(reason) : ''}</p>
+                    <p style="font-size:0.7rem; color:#fbbf24; margin-top:5px;">Nothing was charged. You can try again.</p>
+                    <button type="button" class="btn btn-primary-gradient btn-sm" style="margin-top:15px; width:100%;" onclick="ChurchApp.closeMpesaOverlay()">Okay</button>
+                </div>
+            `;
+        }
+        delete this._mpesaPending;
+    },
+
+    cancelMpesaPending(notify) {
+        if (this._mpesaPollTimer) { clearInterval(this._mpesaPollTimer); this._mpesaPollTimer = null; }
+        if (this._mpesaGiveUp) { clearTimeout(this._mpesaGiveUp); this._mpesaGiveUp = null; }
+        this._mpesaCheckoutId = null;
+        if (notify !== false) {
+            const modal = document.getElementById('mobile-giving-success-overlay');
+            if (modal) modal.style.display = 'none';
+        }
+    },
+
+    closeMpesaOverlay() {
+        const modal = document.getElementById('mobile-giving-success-overlay');
+        if (modal) modal.style.display = 'none';
+    },
+
     renderMobileServe() {
         const openRolesContainer = document.getElementById('mobile-open-serve-roles');
         openRolesContainer.innerHTML = '';
+        // Data isolation: only serve opportunities and assignments on this
+        // member's own campus are shown.
+        const phoneBranch = this.mobileMemberBranchId();
+        const branchEvents = (this.db.events || []).filter(e => e.branchId === phoneBranch);
 
         // "My Serving Assignments" - tasks the admin assigned to this member
         // (including AI Match assignments) appear here in the app.
@@ -7824,7 +8696,7 @@ const ChurchApp = {
         if (assignmentsContainer) {
             const memberId = this.simulatedMemberId();
             const assignments = [];
-            (this.db.events || []).forEach(e => {
+            branchEvents.forEach(e => {
                 const roster = this.ensureEventRoster(e);
                 roster.forEach(entry => {
                     if ((entry.volunteers || []).includes(memberId)) {
@@ -7848,7 +8720,7 @@ const ChurchApp = {
         }
 
         // Extract list of all open positions in upcoming events
-        this.db.events.forEach(e => {
+        branchEvents.forEach(e => {
             e.rolesRequired.forEach(role => {
                 // Check if someone has signed up
                 const isAssigned = e.volunteersSignedUp.some(mId => {
@@ -7878,35 +8750,35 @@ const ChurchApp = {
             openRolesContainer.innerHTML = `<div class="empty-state small"><span>All volunteer slots are fully rostered. Thank you!</span></div>`;
         }
 
-        // Render current member skills list
-        const m1 = this.db.members.find(m => m.id === 'm1');
+        // Render the logged-in member's skills list
+        const me = this.simulatedMember();
         const skillsContainer = document.getElementById('mobile-my-skills-list');
-        skillsContainer.innerHTML = ((m1 && m1.volunteer_skills) || []).map(s => `<span class="skill-tag">${esc(s)}</span>`).join('');
+        skillsContainer.innerHTML = ((me && me.volunteer_skills) || []).map(s => `<span class="skill-tag">${esc(s)}</span>`).join('');
     },
 
     handleMobileServeSignup(eventId, role) {
-        // Logged-in member John Kamau (m1) registers
+        // The logged-in member registers to serve
         const event = this.db.events.find(e => e.id === eventId);
-        const m1 = this.db.members.find(m => m.id === 'm1');
+        const me = this.simulatedMember();
         
-        if (event && m1) {
+        if (event && me) {
             // Check if member already has this skill, if not add it
-            if (!(m1.volunteer_skills || []).includes(role)) {
-                m1.volunteer_skills.push(role);
+            if (!(me.volunteer_skills || []).includes(role)) {
+                me.volunteer_skills.push(role);
             }
 
-            if (!event.volunteersSignedUp.includes('m1')) {
-                event.volunteersSignedUp.push('m1');
+            if (!event.volunteersSignedUp.includes(me.id)) {
+                event.volunteersSignedUp.push(me.id);
             }
 
             // Boost engagement index
-            m1.engagement_score = Math.min(m1.engagement_score + 6, 100);
+            me.engagement_score = Math.min(me.engagement_score + 6, 100);
             this.saveDB();
             this.apiWrite(
                 () => Church2API.updateEventVolunteers(eventId, event.volunteersSignedUp),
                 (srv) => { if (srv && Array.isArray(srv.volunteersSignedUp)) event.volunteersSignedUp = srv.volunteersSignedUp; }
             );
-            this.syncMemberProfile(m1);
+            this.syncMemberProfile(me);
 
             this.toast(`You're serving as ${role} for ${event.title}. Thank you!`);
             this.renderAll();
@@ -7918,13 +8790,13 @@ const ChurchApp = {
         if (!input || !input.value.trim()) return;
 
         const newSkill = input.value.trim();
-        const m1 = this.db.members.find(m => m.id === 'm1');
-        if (m1) {
-            if (!(m1.volunteer_skills || []).includes(newSkill)) {
-                m1.volunteer_skills.push(newSkill);
+        const me = this.simulatedMember();
+        if (me) {
+            if (!(me.volunteer_skills || []).includes(newSkill)) {
+                me.volunteer_skills.push(newSkill);
             }
             this.saveDB();
-            this.syncMemberProfile(m1);
+            this.syncMemberProfile(me);
             input.value = '';
             this.renderMobileServe();
         }
@@ -8303,14 +9175,17 @@ const ChurchApp = {
         // Categorize via AI
         const categoryResult = window.AIEngine.categorizePrayerRequest(text);
 
+        const me = this.simulatedMember();
+        const memberId = me ? me.id : null;
+        const memberName = me ? `${me.firstName || ''} ${me.lastName || ''}`.trim() || 'Church Member' : 'Church Member';
+        const memberBranch = me && me.branchId ? (this.db.branches.find(b => b.id === me.branchId) || null) : null;
+        const branchName = (me && me.branchName) || (memberBranch && memberBranch.name) || (this.db.branches[0] && this.db.branches[0].name) || 'Main Branch';
+
         const newPrayer = {
             id: `pr_${Date.now()}`,
-            memberId: 'm1',
-            memberName: 'John Kamau',
-            // Derive the branch from the member record rather than hardcoding
-            // one, so the prayer routes to the right branch after a rebrand.
-            branchName: (this.db.members.find(m => m.id === 'm1') || {}).branchName
-                || (this.db.branches[0] && this.db.branches[0].name) || 'Main Branch',
+            memberId,
+            memberName,
+            branchName,
             text: text,
             category: categoryResult.category,
             route: categoryResult.route,
@@ -8321,7 +9196,7 @@ const ChurchApp = {
         this.db.prayerRequests.push(newPrayer);
         this.saveDB();
         this.apiWrite(
-            () => Church2API.submitPrayer({ memberId: 'm1', memberName: newPrayer.memberName, branchName: newPrayer.branchName, text, category: newPrayer.category, route: newPrayer.route }),
+            () => Church2API.submitPrayer({ memberId, memberName, branchName, text, category: newPrayer.category, route: newPrayer.route }),
             (srv) => { if (srv && srv.id) newPrayer.id = srv.id; }
         );
         textarea.value = '';

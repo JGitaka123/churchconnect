@@ -14,6 +14,7 @@ import {
   generateCode, hashCode, verifyCodeHash, deliverCode, deliverResetCode, availableMethods,
   providerConfigured, generateRecoveryCodes, hashRecoveryCode, generateTotpSecret, totpUri, verifyTotp,
 } from '../mfa.js';
+import { readableProviderError } from '../notify.js';
 
 import '../bcrypt-random.js';
 
@@ -138,7 +139,7 @@ router.post('/mfa/request', async (req, res, next) => {
     if (config.env === 'production' && !providerConfigured(method)) {
       const key = method === 'email' ? 'EMAIL_API_KEY' : 'SMS_USERNAME + SMS_API_KEY';
       return res.status(502).json({
-        error: `Could not send the code - ${method} delivery is not set up on this site yet. Add ${key} to your Cloudflare Pages secrets and redeploy.`,
+        error: `Could not send the code - ${method} delivery is not set up on this site yet. Add ${key} to your host environment variables and restart.`,
       });
     }
 
@@ -162,8 +163,10 @@ router.post('/mfa/request', async (req, res, next) => {
       delivered = await deliverCode(user, method, code);
     } catch (e) {
       console.error('MFA delivery failed:', e.message);
-      const detail = config.env === 'production' ? undefined : e.message;
-      return res.status(502).json({ error: `Could not send the code (${method}). Check the ${method === 'email' ? 'email' : 'SMS'} provider settings in Cloudflare, or try another method.`, ...(detail ? { detail } : {}) });
+      // Show the real reason (also in production) - for Resend test mode the
+      // message explains exactly which domain to verify.
+      const detail = readableProviderError(e);
+      return res.status(502).json({ error: `Could not send the code (${method}). Check the ${method === 'email' ? 'email' : 'SMS'} provider settings in server/.env (or your host environment variables), or try another method.`, ...(detail ? { detail } : {}) });
     }
     await auditLog(user.id, 'mfa_code_sent', { method }, req);
     return res.json({ ok: true, ...(delivered.debugCode !== undefined ? { debugCode: delivered.debugCode } : {}) });
@@ -529,11 +532,20 @@ router.post('/register', async (req, res, next) => {
          VALUES ($1, $2, $3, 'member', $4, $5, false) RETURNING id`,
         [mail, hash, fullName, branchId, churchId]
       );
-      await client.query(
-        `INSERT INTO members (id, branch_id, church_id, first_name, last_name, email, engagement_score)
-         VALUES ($1, $2, $3, $4, $5, $6, 60)`,
-        [genId('m'), branchId, churchId, firstName, lastName, mail]
+      // The church may already have a directory record for this person (the
+      // admin added them with the same email and campus). Reuse it so they log
+      // straight into their own member details instead of creating a duplicate.
+      const { rows: existing } = await client.query(
+        'SELECT id FROM members WHERE lower(email) = lower($1) AND branch_id = $2 AND church_id = $3 LIMIT 1',
+        [mail, branchId, churchId]
       );
+      if (!existing[0]) {
+        await client.query(
+          `INSERT INTO members (id, branch_id, church_id, first_name, last_name, email, engagement_score)
+           VALUES ($1, $2, $3, $4, $5, $6, 60)`,
+          [genId('m'), branchId, churchId, firstName, lastName, mail]
+        );
+      }
       return { id: u[0].id, email: mail, name: fullName, role: 'member', branch_id: branchId, church_id: churchId, mfa_enabled: false };
     });
 

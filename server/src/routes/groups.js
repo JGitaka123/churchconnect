@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query } from '../db/pool.js';
 import { resolveChurch, resolveScope, requireRole } from '../auth.js';
 import { defaultBranchForChurch, genId, mapAnnouncement, mapGroup, resolveBranch, wrap } from './util.js';
-import { sendGroupAnnouncement } from '../notify.js';
+import { assertDeliveryReady, sendGroupAnnouncement } from '../notify.js';
 
 const router = Router();
 
@@ -169,8 +169,13 @@ router.post('/:id/announce', requireRole('hq_admin', 'branch_admin', 'ministry_l
   const { title, body, channels = [] } = req.body || {};
   if (!title || !String(title).trim()) return res.status(400).json({ error: 'Announcement title is required' });
   if (!body || !String(body).trim()) return res.status(400).json({ error: 'Announcement message is required' });
-  const picked = (Array.isArray(channels) ? channels : []).filter((ch) => ch === 'email' || ch === 'whatsapp');
-  if (picked.length === 0) return res.status(400).json({ error: 'Pick at least one channel (email or WhatsApp)' });
+  const picked = (Array.isArray(channels) ? channels : []).filter((ch) => ch === 'email' || ch === 'sms' || ch === 'whatsapp');
+  if (picked.length === 0) return res.status(400).json({ error: 'Pick at least one channel (email, SMS or WhatsApp)' });
+  try {
+    assertDeliveryReady(picked);
+  } catch (e) {
+    return res.status(503).json({ error: e.message });
+  }
 
   const { rows } = await query('SELECT * FROM groups WHERE id = $1', [req.params.id]);
   const g = rows[0];
@@ -198,9 +203,16 @@ router.post('/:id/announce', requireRole('hq_admin', 'branch_admin', 'ministry_l
     announcement: { title: String(title).trim(), body: String(body).trim(), channels: picked },
   });
 
-  res.status(201).json({ announcement: mapAnnouncement(inserted[0]), delivered });
+  // Reach summary so the admin sees how many group members can actually be
+  // contacted over the chosen channels and how many have no contact on file.
+  const reach = {
+    members: members.length,
+    withEmail: members.filter((x) => x.email && String(x.email).trim()).length,
+    withPhone: members.filter((x) => x.phone && String(x.phone).trim()).length,
+    withoutContact: members.filter((x) => !x.email && !x.phone).length,
+  };
+
+  res.status(201).json({ announcement: mapAnnouncement(inserted[0]), delivered, reach });
 }));
 
 export default router;
-
-

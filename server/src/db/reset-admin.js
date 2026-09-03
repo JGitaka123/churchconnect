@@ -15,11 +15,14 @@ import { pool } from './pool.js';
 import { config } from '../config.js';
 import { migrate } from './migrate.js';
 
-const email = String(process.env.ADMIN_EMAIL || 'admin@maximummiracle.org').toLowerCase().trim();
+const email = String(process.env.ADMIN_EMAIL || 'wilson841lily@gmail.com').toLowerCase().trim();
 const password = process.env.ADMIN_PASSWORD || process.env.SEED_PASSWORD || 'grace';
 
 async function main() {
   await migrate(); // idempotent - safe on an already-set-up database
+  // The rescue flag column is added by schema.sql, but adding it here too makes
+  // this script self-sufficient on older databases that were never re-migrated.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_exempt BOOLEAN NOT NULL DEFAULT false`);
 
   const hash = await bcrypt.hash(password, config.bcryptRounds);
   const { rows } = await pool.query(

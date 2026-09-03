@@ -14,6 +14,7 @@ import { config } from '../config.js';
 import { hashPassword, verifyPassword, requireRole, resolveChurch, passwordProblem } from '../auth.js';
 import { defaultBranchForChurch, genId, resolveBranch, wrap } from './util.js';
 import { generateCode, hashCode, deliverCode, availableMethods } from '../mfa.js';
+import { readableProviderError } from '../notify.js';
 import {
   mfaNeeded, mfaTicket, accountLocked, lockRemainingSeconds, recordLoginFailure, recordLoginSuccess,
   issueAccess, verifyMfaForUser, auditLog,
@@ -122,7 +123,10 @@ v1AuthRouter.post('/mfa/request', async (req, res, next) => {
       delivered = await deliverCode(user, method, code);
     } catch (e) {
       console.error('MFA delivery failed:', e.message);
-      return res.status(502).json({ error: 'Could not send the code. Check the email/SMS provider settings or try another method.' });
+      return res.status(502).json({
+        error: 'Could not send the code. Check the email/SMS provider settings or try another method.',
+        detail: readableProviderError(e),
+      });
     }
     await auditLog(user.id, 'mfa_code_sent', { method, api: 'v1' }, req);
     return res.json({ status: 'ok', ...(delivered.debugCode !== undefined ? { debug_code: delivered.debugCode } : {}) });

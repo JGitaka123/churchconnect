@@ -12,6 +12,7 @@
 // return it as debugCode so the full flow stays testable locally. In
 // production, an unconfigured method fails closed (no code is issued to logs).
 import crypto from 'node:crypto';
+import { sendEmail } from './email.js';
 
 // CSPRNG that runs on Node AND Cloudflare Workers. node:crypto.randomBytes and
 // randomInt are not guaranteed on every Workers runtime, so we draw from Web
@@ -114,17 +115,14 @@ async function httpJson(url, { headers = {}, body, timeoutMs = 12000 } = {}) {
 // or "Maximum Miracle Centre"). Override with EMAIL_FROM_NAME.
 const appName = () => process.env.EMAIL_FROM_NAME || 'Church Connect';
 
-// Resend-style email (also used as the generic EMAIL_API_URL adapter).
+// Email the verification code. The actual provider (Resend/Brevo/SendGrid) is
+// handled by email.js - MFA codes and member announcements share the sender.
 async function deliverEmail(user, code) {
-  const url = process.env.EMAIL_API_URL || 'https://api.resend.com/emails';
-  const key = process.env.EMAIL_API_KEY;
-  if (!key) throw new Error('EMAIL_API_KEY is not set - get a key at https://resend.com and add it to .env');
   const name = appName();
-  const from = process.env.EMAIL_FROM || `${name} <no-reply@yourchurch.org>`;
   const subject = `Your ${name} verification code`;
   const text = `Your ${name} verification code is ${code}. It expires in 10 minutes. If you did not request it, you can ignore this email.`;
   const html = `<p>Your ${name} verification code is <strong>${code}</strong>.</p><p>It expires in 10 minutes. If you did not request it, you can ignore this email.</p>`;
-  await httpJson(url, { headers: { Authorization: `Bearer ${key}` }, body: JSON.stringify({ from, to: [user.email], subject, text, html }) });
+  await sendEmail({ to: user.email, subject, text, html });
 }
 
 // Africa's Talking SMS (form-encoded, apiKey header). Kenya-first provider.
@@ -188,7 +186,7 @@ export async function deliverCode(user, method, code) {
   }
 
   if (isProd()) {
-    throw new Error(`${method === 'email' ? 'Email' : 'SMS'} delivery is not configured (set ${method === 'email' ? 'EMAIL_API_KEY' : 'SMS_USERNAME+SMS_API_KEY'} in Cloudflare and redeploy)`);
+    throw new Error(`${method === 'email' ? 'Email' : 'SMS'} delivery is not configured (set ${method === 'email' ? 'EMAIL_API_KEY' : 'SMS_USERNAME+SMS_API_KEY'} in server/.env or your host environment, then restart)`);
   }
 
   console.log(`[mfa-dev] ${method.toUpperCase()} code for ${user.email}: ${code}`);
@@ -303,17 +301,14 @@ export function verifyRecoveryCode(storedHashes, code) {
   return -1;
 }
 
-// Password-reset code email (reuses the Resend-style delivery path).
+// Password-reset code email - same shared provider adapter as MFA codes, so
+// Resend/Brevo/SendGrid all work here too.
 async function deliverResetEmail(user, code) {
-  const url = process.env.EMAIL_API_URL || 'https://api.resend.com/emails';
-  const key = process.env.EMAIL_API_KEY;
-  if (!key) throw new Error('EMAIL_API_KEY is not set - add it to .env to send password reset emails');
   const name = appName();
-  const from = process.env.EMAIL_FROM || `${name} <no-reply@yourchurch.org>`;
   const subject = `Reset your ${name} password`;
   const text = `A password reset was requested for your ${name} account. Use this code to choose a new password: ${code}. It expires in 15 minutes. If you did not request it, you can ignore this email.`;
   const html = `<p>A password reset was requested for your ${name} account.</p><p>Use this code to choose a new password: <strong>${code}</strong>.</p><p>It expires in 15 minutes. If you did not request it, you can ignore this email.</p>`;
-  await httpJson(url, { headers: { Authorization: `Bearer ${key}` }, body: JSON.stringify({ from, to: [user.email], subject, text, html }) });
+  await sendEmail({ to: user.email, subject, text, html });
 }
 
 // Deliver a reset code. Mirrors deliverCode(): non-production falls back to a

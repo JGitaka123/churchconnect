@@ -34,6 +34,10 @@
     try { data = await res.json(); } catch { /* no body */ }
     if (!res.ok) {
       const err = new Error((data && data.error) || `Request failed (${res.status})`);
+      // In development the server includes the underlying provider error
+      // (e.g. Resend "unverified domain") - surface it so email issues are
+      // visible on the login screen instead of a generic message.
+      if (data && data.detail) err.message = err.message + ' (' + data.detail + ')';
       err.status = res.status;
       throw err;
     }
@@ -133,6 +137,8 @@
     deleteFollowup: (id) => request('DELETE', `/followups/${encodeURIComponent(id)}`),
     announcements: () => request('GET', '/announcements'),
     sendAnnouncement: (a) => request('POST', '/announcements', a),
+    notifyStatus: () => request('GET', '/announcements/notify-status'),
+    testEmail: (to) => request('POST', '/announcements/test-email', { to }),
     suggestAnnouncement: (a) => request('POST', '/announcements/suggest', a),
     approveAnnouncement: (id) => request('POST', '/announcements/' + id + '/approve'),
     rejectAnnouncement: (id, reason) => request('POST', '/announcements/' + id + '/reject', { reason }),
@@ -149,6 +155,9 @@
     deleteCampaign: (id) => request('DELETE', `/campaigns/${encodeURIComponent(id)}`),
     recurringGifts: (branch) => request('GET', scoped('/recurring-gifts', branch)),
     createRecurringGift: (g) => request('POST', '/recurring-gifts', g),
+    // M-Pesa STK Push (Safaricom Daraja) - server-side only; keys stay in .env.
+    mpesaStkPush: (p) => request('POST', '/mpesa/stkpush', p),
+    mpesaPaymentStatus: (checkoutRequestId) => request('GET', '/mpesa/payments/' + encodeURIComponent(checkoutRequestId)),
     careInbox: (branch) => request('GET', scoped('/care-inbox', branch)),
     postCareMessage: (m) => request('POST', '/care-inbox', m),
     updateCareMessage: (id, patch) => request('PATCH', `/care-inbox/${encodeURIComponent(id)}`, patch),

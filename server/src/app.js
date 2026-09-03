@@ -19,6 +19,7 @@ import eventRoutes from './routes/events.js';
 import campaignRoutes from './routes/campaigns.js';
 import recurringGiftRoutes from './routes/recurringGifts.js';
 import careInboxRoutes from './routes/careInbox.js';
+import mpesaRouter from './routes/mpesa.js';
 
 // API-only Express app. Used by both the local dev server (index.js) and the
 // Cloudflare Pages Functions entry (functions/api/[[path]].js), which mounts
@@ -181,6 +182,10 @@ app.get('/api/youtube/feed', async (req, res) => {
 });
 
 // Public auth endpoints
+// M-Pesa (Safaricom Daraja). The /callback route is public - Safaricom calls it
+// without a token - so this mount sits above the global authenticate gate. The
+// stkpush + status routes enforce their own authentication inside the router.
+app.use('/api/mpesa', mpesaRouter);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/v1/auth', authLimiter, v1AuthRouter);
 app.use('/api/auth/login', loginLimiter);

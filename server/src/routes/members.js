@@ -42,6 +42,10 @@ router.post('/', requireRole('hq_admin', 'branch_admin'), wrap(async (req, res) 
   const church = resolveChurch(req);
   const { firstName, lastName, email, phone, volunteer_skills = [], branchId, familyId, familyRole, familyName, familyContactName, familyContactPhone, familyContactEmail, rolePosition, maritalStatus, age, expectations, previousExperience, familyMembers = [], pledgeAmount, pledgePaid } = req.body || {};
   if (!firstName || !lastName) return res.status(400).json({ error: 'First and last name are required' });
+  const mail = email ? String(email).trim() : null;
+  if (mail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) {
+    return res.status(400).json({ error: 'Enter a valid email address so the member can receive messages and log in.' });
+  }
   const pledgeAmt = (pledgeAmount === undefined || pledgeAmount === null || pledgeAmount === '') ? null : Number(pledgeAmount);
   if (pledgeAmt !== null && (!Number.isFinite(pledgeAmt) || pledgeAmt < 0)) {
     return res.status(400).json({ error: 'pledgeAmount must be a non-negative number' });
@@ -59,7 +63,7 @@ router.post('/', requireRole('hq_admin', 'branch_admin'), wrap(async (req, res) 
   const { rows } = await query(
     `INSERT INTO members (id,branch_id,church_id,first_name,last_name,email,phone,volunteer_skills,engagement_score,family_id,family_role,family_name,family_contact_name,family_contact_phone,family_contact_email,role_position,marital_status,age,expectations,previous_experience,family_members,pledge_amount,pledge_paid)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,60,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,$21,$22) RETURNING *`,
-    [id, resolved.branchId, resolved.churchId, firstName, lastName, email || null, phone || null, Array.isArray(volunteer_skills) ? volunteer_skills : [], familyId || null, familyRole || null, familyName || null, familyContactName || null, familyContactPhone || null, familyContactEmail || null, rolePosition || null, maritalStatus || null, age != null ? Number(age) : null, expectations || null, previousExperience || null, JSON.stringify(Array.isArray(familyMembers) ? familyMembers : []), pledgeAmt, pledgePaidAmt]
+    [id, resolved.branchId, resolved.churchId, firstName, lastName, mail, phone || null, Array.isArray(volunteer_skills) ? volunteer_skills : [], familyId || null, familyRole || null, familyName || null, familyContactName || null, familyContactPhone || null, familyContactEmail || null, rolePosition || null, maritalStatus || null, age != null ? Number(age) : null, expectations || null, previousExperience || null, JSON.stringify(Array.isArray(familyMembers) ? familyMembers : []), pledgeAmt, pledgePaidAmt]
   );
   const { rows: b } = await query('SELECT name FROM branches WHERE id=$1', [resolved.branchId]);
   res.status(201).json(mapMember({ ...rows[0], branch_name: b[0]?.name }));
@@ -92,7 +96,13 @@ router.patch('/:id', wrap(async (req, res) => {
 
   if (body.firstName !== undefined) push('first_name', String(body.firstName).trim());
   if (body.lastName !== undefined) push('last_name', String(body.lastName).trim());
-  if (body.email !== undefined) push('email', body.email ? String(body.email).trim() : null);
+  if (body.email !== undefined) {
+    const newMail = body.email ? String(body.email).trim() : '';
+    if (newMail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(newMail)) {
+      return res.status(400).json({ error: 'Enter a valid email address so the member can receive messages and log in.' });
+    }
+    push('email', newMail || null);
+  }
   if (body.phone !== undefined) push('phone', body.phone ? String(body.phone).trim() : null);
   if (body.volunteer_skills !== undefined) {
     if (!Array.isArray(body.volunteer_skills) || body.volunteer_skills.some((s) => typeof s !== 'string')) {
