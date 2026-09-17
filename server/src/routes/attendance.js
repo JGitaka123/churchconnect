@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db/pool.js';
 import { resolveChurch, resolveScope, requireRole } from '../auth.js';
-import { wrap } from './util.js';
+import { findMemberIdForUser, wrap } from './util.js';
 
 const router = Router();
 
@@ -13,6 +13,13 @@ router.get('/', wrap(async (req, res) => {
   const where = [];
   if (scope) { params.push(scope); where.push(`branch_id = $${params.length}`); }
   if (church) { params.push(church); where.push(`church_id = $${params.length}`); }
+  // A member only ever sees their own attendance; the branch roll is staff data.
+  if (req.user.role === 'member') {
+    const selfId = await findMemberIdForUser(req.user);
+    if (!selfId) return res.json([]);
+    params.push(selfId);
+    where.push(`member_id = $${params.length}`);
+  }
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const { rows } = await query(`SELECT * FROM attendance ${clause}`, params);
   res.json(rows.map((r) => ({

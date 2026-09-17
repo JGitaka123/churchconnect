@@ -17,6 +17,8 @@ export const mapMember = (r) => ({
   familyMembers: Array.isArray(r.family_members) ? r.family_members : [],
   pledgeAmount: r.pledge_amount == null ? null : Number(r.pledge_amount),
   pledgePaid: Number(r.pledge_paid || 0),
+  pledgeCampaignId: r.pledge_campaign_id || null,
+  pledges: Array.isArray(r.pledges) ? r.pledges : [],
   branchName: r.branch_name || undefined,
 });
 
@@ -25,6 +27,7 @@ export const mapTx = (r) => ({
   memberName: r.member_name, amount: Number(r.amount), category: r.category,
   date: r.date instanceof Date ? `${r.date.getFullYear()}-${String(r.date.getMonth() + 1).padStart(2, '0')}-${String(r.date.getDate()).padStart(2, '0')}` : r.date,
   paymentMethod: r.payment_method, receiptNumber: r.receipt_number,
+  campaignId: r.campaign_id || null,
 });
 
 export const mapGroup = (r) => ({

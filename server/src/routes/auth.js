@@ -75,7 +75,6 @@ router.post('/login', async (req, res, next) => {
       await verifyPassword(password, DUMMY_HASH); // constant-ish timing
       return fail();
     }
-    if (!user.active) return fail();
 
     if (accountLocked(user)) {
       return res.status(423).json({
@@ -95,6 +94,18 @@ router.post('/login', async (req, res, next) => {
         });
       }
       return fail();
+    }
+
+    // The password is correct from here on, so it is safe to explain why an
+    // account that authenticates still cannot sign in. Doing this check after
+    // the password (rather than before it) keeps a deactivated account from
+    // being distinguishable by someone who does not know the password.
+    if (!user.active) {
+      await auditLog(user.id, 'login_blocked_inactive', {}, req);
+      return res.status(403).json({
+        error: 'This account has been deactivated. Ask an administrator to re-enable it.',
+        deactivated: true,
+      });
     }
 
     await recordLoginSuccess(user.id, req);
@@ -502,6 +513,35 @@ router.get('/branches', async (_req, res, next) => {
   }
 });
 
+// Auto-link self-registering members to their directory campus by email.
+async function resolveRegistrationContext(mail, branchId) {
+  const { rows: byEmail } = await query(
+    `SELECT id, branch_id, church_id FROM members
+     WHERE email IS NOT NULL AND email <> '' AND lower(email) = lower($1)
+     ORDER BY created_at, id`, [mail]);
+  if (branchId) {
+    const { rows: b } = await query('SELECT id, church_id FROM branches WHERE id = $1', [branchId]);
+    if (!b[0]) return { error: 'Unknown campus - pick a branch from the list' };
+    const chosen = b[0];
+    const sameBranch = byEmail.find((m) => m.church_id === chosen.church_id && m.branch_id === chosen.id);
+    if (sameBranch) return { branchId: sameBranch.branch_id, churchId: sameBranch.church_id, existingMemberId: sameBranch.id };
+    const elsewhere = byEmail.filter((m) => m.church_id === chosen.church_id);
+    const campuses = [...new Set(elsewhere.map((m) => m.branch_id))];
+    if (campuses.length === 1) return { branchId: elsewhere[0].branch_id, churchId: elsewhere[0].church_id, existingMemberId: elsewhere[0].id };
+    if (campuses.length > 1) return { error: 'That email is already on another campus here - ask the church office before registering again.' };
+    return { branchId: chosen.id, churchId: chosen.church_id || 'ch1', existingMemberId: null };
+  }
+  const distinct = [...new Map(byEmail.map((m) => [`${m.church_id}|${m.branch_id}`, m])).values()];
+  if (distinct.length === 1) return { branchId: distinct[0].branch_id, churchId: distinct[0].church_id, existingMemberId: distinct[0].id };
+  if (distinct.length > 1) return { error: 'This email is on more than one campus - ask the church office to merge the records, then try again.' };
+  const { rows: byChurch } = await query('SELECT church_id, count(*) AS n FROM branches GROUP BY church_id');
+  if (byChurch.length === 1 && Number(byChurch[0].n) === 1) {
+    const { rows: only } = await query('SELECT id, church_id FROM branches LIMIT 1');
+    return { branchId: only[0].id, churchId: only[0].church_id, existingMemberId: null };
+  }
+  return { error: 'No member record found - ask the church office to add your email on the web console, then register here.' };
+}
+
 // Self-service registration. Creates a member account (role 'member', MFA off)
 // plus a matching directory record, in one transaction. Privileged roles are
 // never assignable here - they are created by administrators only.
@@ -515,11 +555,10 @@ router.post('/register', async (req, res, next) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return bad('A valid email is required');
     const problem = passwordProblem(password);
     if (problem) return bad(problem);
-    if (!branchId) return bad('A campus (branchId) is required');
 
-    const { rows: b } = await query('SELECT id, church_id FROM branches WHERE id = $1', [branchId]);
-    if (!b[0]) return bad('Unknown campus - pick a branch from the list');
-    const churchId = b[0].church_id || 'ch1';
+    const ctx = await resolveRegistrationContext(mail, branchId);
+    if (ctx.error) return bad(ctx.error);
+    const { branchId: resolvedBranch, churchId, existingMemberId } = ctx;
 
     const hash = await hashPassword(String(password));
     const parts = fullName.split(/\s+/);
@@ -530,23 +569,18 @@ router.post('/register', async (req, res, next) => {
       const { rows: u } = await client.query(
         `INSERT INTO users (email, password_hash, name, role, branch_id, church_id, mfa_enabled)
          VALUES ($1, $2, $3, 'member', $4, $5, false) RETURNING id`,
-        [mail, hash, fullName, branchId, churchId]
+        [mail, hash, fullName, resolvedBranch, churchId]
       );
-      // The church may already have a directory record for this person (the
-      // admin added them with the same email and campus). Reuse it so they log
-      // straight into their own member details instead of creating a duplicate.
-      const { rows: existing } = await client.query(
-        'SELECT id FROM members WHERE lower(email) = lower($1) AND branch_id = $2 AND church_id = $3 LIMIT 1',
-        [mail, branchId, churchId]
-      );
-      if (!existing[0]) {
+      // The directory record matched during resolution is reused so the
+      // account opens the member's real profile (giving, groups, history).
+      if (!existingMemberId) {
         await client.query(
           `INSERT INTO members (id, branch_id, church_id, first_name, last_name, email, engagement_score)
            VALUES ($1, $2, $3, $4, $5, $6, 60)`,
-          [genId('m'), branchId, churchId, firstName, lastName, mail]
+          [genId('m'), resolvedBranch, churchId, firstName, lastName, mail]
         );
       }
-      return { id: u[0].id, email: mail, name: fullName, role: 'member', branch_id: branchId, church_id: churchId, mfa_enabled: false };
+      return { id: u[0].id, email: mail, name: fullName, role: 'member', branch_id: resolvedBranch, church_id: churchId, mfa_enabled: false };
     });
 
     const { token, sessionId } = await issueAccess(tokenUser, req);

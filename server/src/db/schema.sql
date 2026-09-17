@@ -56,6 +56,19 @@ ALTER TABLE members ADD COLUMN IF NOT EXISTS family_members JSONB NOT NULL DEFAU
 -- transaction linked to the member.
 ALTER TABLE members ADD COLUMN IF NOT EXISTS pledge_amount NUMERIC(12,2);
 ALTER TABLE members ADD COLUMN IF NOT EXISTS pledge_paid  NUMERIC(12,2) NOT NULL DEFAULT 0;
+-- The project a member's pledge is for, chosen by the member in the app.
+-- NULL means a general pledge that is not tied to any single project.
+ALTER TABLE members ADD COLUMN IF NOT EXISTS pledge_campaign_id TEXT;
+-- One member may pledge to several projects at once, so the per-project part of
+-- their promise lives here as [{campaignId, amount}]. pledge_amount stays the
+-- member's total promise so every existing total still adds up.
+ALTER TABLE members ADD COLUMN IF NOT EXISTS pledges JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- Pledges recorded before that list existed live in pledge_amount (and, once the
+-- app was used, the project they were for). Move them across once so the member
+-- app and the console report the same promise. No-op after the first run.
+UPDATE members
+   SET pledges = jsonb_build_array(jsonb_build_object('campaignId', pledge_campaign_id, 'amount', pledge_amount))
+ WHERE pledge_amount IS NOT NULL AND pledge_amount > 0 AND pledges = '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS transactions (
   id             TEXT PRIMARY KEY,
@@ -71,6 +84,11 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_tx_branch ON transactions(branch_id);
 CREATE INDEX IF NOT EXISTS idx_tx_member ON transactions(member_id);
+-- The project a gift was given to. Tithes and offerings leave this NULL; a gift
+-- to a project carries it so the project's progress is exact instead of being
+-- guessed from the fund category.
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS campaign_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_tx_campaign ON transactions(campaign_id);
 
 CREATE TABLE IF NOT EXISTS attendance (
   id           TEXT PRIMARY KEY,
@@ -232,6 +250,14 @@ ON CONFLICT (id) DO NOTHING;
 ALTER TABLE churches ADD COLUMN IF NOT EXISTS contact_email TEXT;
 ALTER TABLE churches ADD COLUMN IF NOT EXISTS contact_phone TEXT;
 ALTER TABLE churches ADD COLUMN IF NOT EXISTS news_bullet TEXT;
+
+-- Sermon + social channels the church publishes on. The admin links these in
+-- Settings > Church Profile and the member app's Sermons tab surfaces them for
+-- every member (a YouTube channel drives the in-app feed; Facebook and TikTok
+-- open the church's page).
+ALTER TABLE churches ADD COLUMN IF NOT EXISTS youtube_channel TEXT;
+ALTER TABLE churches ADD COLUMN IF NOT EXISTS facebook_url    TEXT;
+ALTER TABLE churches ADD COLUMN IF NOT EXISTS tiktok_url      TEXT;
 
 -- Tenancy columns. DEFAULT 'ch1' backfills pre-multi-tenant rows and keeps any
 -- legacy write path working; the API always sets church_id explicitly.

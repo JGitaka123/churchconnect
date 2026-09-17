@@ -1,16 +1,16 @@
 // Church 2.0 - service worker.
 //
-// Makes the app installable on phones and keeps it usable offline:
+// Makes the Church Connect member app installable on phones and keeps it usable offline:
 //   - API calls are never intercepted (they must always hit the network).
 //   - Page navigations: network-first, falling back to the cached app shell.
 //   - Static assets: cache-first with a background refresh (stale-while-
 //     revalidate). Versioned URLs (?v=...) get fresh cache entries for free.
-const CACHE_NAME = 'mmc-console-v5';
+const CACHE_NAME = 'churchconnect-v17';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME)
-      .then((c) => c.addAll(['./', './index.html']))
+      .then((c) => c.addAll(['./', './index.html', './member.html']))
       .then(() => self.skipWaiting())
   );
 });
@@ -39,7 +39,7 @@ self.addEventListener('fetch', (e) => {
           caches.open(CACHE_NAME).then((c) => c.put('./index.html', copy));
           return res;
         })
-        .catch(() => caches.match('./index.html'))
+        .catch(() => caches.match(e.request).then((hit) => hit || caches.match('./index.html')))
     );
     return;
   }

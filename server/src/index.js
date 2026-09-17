@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import { app, errorHandler } from './app.js';
 import { config } from './config.js';
 import { pool } from './db/pool.js';
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 // layer mounts the API under /api/*.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendDir = path.resolve(__dirname, '../../'); // Church/ SPA root
-const FRONTEND_FILES = ['index.html', 'styles.css', 'app.js', 'ai-engine.js', 'manifest.json', 'icon.svg', 'sw.js'];
+const FRONTEND_FILES = ['index.html', 'styles.css', 'app.js', 'ai-engine.js', 'manifest.json', 'icon.svg', 'sw.js', 'member-manifest.json'];
 // index.html is read per-request so HTML edits (labels, layout) show up on a
 // plain refresh without a server restart. The shell is tiny and this app is
 // demo-scale, so the synchronous read is a non-issue.
@@ -35,6 +35,14 @@ for (const file of FRONTEND_FILES) {
   app.get('/' + file, (_req, res) => res.sendFile(path.join(frontendDir, file)));
 }
 app.get('/', (_req, res) => res.type('html').send(loadIndexHtml()));
+// The member app is generated from index.html (same as scripts/build-cf.mjs)
+// so the installable member entry stays current and always carries the
+// same-origin API marker in local dev too.
+app.get('/member.html', (_req, res) => res.type('html').send(
+  loadIndexHtml()
+    .replace('<body>', '<body data-app="member">')
+    .replace(/href="manifest\.json\?v=\d+"/, 'href="member-manifest.json?v=1"')
+));
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
   res.type('html').send(loadIndexHtml());
@@ -63,6 +71,8 @@ async function startServer() {
       server = await tryListen(port);
       console.log(`\nChurch 2.0 is running at  http://localhost:${port}  (${config.env})`);
       console.log(`Open this address in your browser - it serves the app AND the API.\n`);
+      console.log(`Sign-ins and any refusal reasons are printed live below.`);
+      console.log(`Staff sign-ins are tagged [STAFF] so an admin login stands out.\n`);
       break;
     } catch (err) {
       if (err && err.message === 'EADDRINUSE') {

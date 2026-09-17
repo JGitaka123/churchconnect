@@ -77,6 +77,15 @@ const FAMILY_ROLES = ['Husband', 'Wife', 'Child', 'Parent', 'Guardian', 'Sibling
 // Payment means (methods) a member can use to pay their pledge.
 const PLEDGE_METHODS = ['M-Pesa', 'Bank Transfer', 'Cash', 'Card', 'Cheque', 'PayPal', 'Other'];
 
+// Explains on screen exactly why the app cannot reach the API.
+function backendOffMessage() {
+    const port = (typeof window !== 'undefined' && window.location.port) || '';
+    if (port && port !== '4000') {
+        return 'Backend unreachable: this page is on port ' + port + ', but the API only answers on port 4000. Close the server window (Ctrl+C), run START-CLEAN.bat in the Church folder, then open http://localhost:4000';
+    }
+    return 'Backend not connected. Run START-CLEAN.bat in the Church folder (or npm.cmd start), then open http://localhost:4000. On the live site, wait a minute and reload.';
+}
+
 // Initialize Global State
 const ChurchApp = {
     // 1. Centralized Mock Database
@@ -185,6 +194,10 @@ const ChurchApp = {
         bibleChapter: '1'
     },
 
+    // Member home: the two "View all" links expand the announcement and event
+    // previews in place so the first screen stays close to the reference design.
+    mobileHomeShowAll: { announcements: false, events: false },
+
     // 3. Application Charts (Chart.js references)
     charts: {},
 
@@ -203,6 +216,7 @@ const ChurchApp = {
         this.ensureTransportMeta();
         this.loadAttendanceMeta();
         this.loadTheme();
+        this.setupInstallPrompt();
         this.setupEventHandlers();
 
         // Auth gate. When the production API is configured, restore the session
@@ -239,13 +253,43 @@ const ChurchApp = {
     // In API mode this is moot - the server's data replaces it on hydrate.
     SEED_VERSION: 5,
 
+    // The live (API) shape of the store: every collection is filled from
+    // Postgres by hydrateFromApi(), plus the client-only content the app ships
+    // (reading plans) and the metadata caches. It deliberately starts empty -
+    // the dataset below is demo scaffolding, and anything the API does not
+    // return (sermons have no database table at all) would otherwise keep
+    // rendering fabricated rows as if they were real records.
+    emptyLiveDb() {
+        return {
+            __seedVersion: this.SEED_VERSION,
+            churches: [],
+            branches: [],
+            members: [],
+            transactions: [],
+            attendance: [],
+            attendanceMeta: {},
+            recurringGifts: [],
+            campaigns: [],
+            followUps: [],
+            groups: [],
+            announcements: [],
+            events: [],
+            sermons: [],
+            prayerRequests: [],
+            careInbox: [],
+            // Shipped devotional content rather than church records; no table
+            // exists for it, so it stays as authored.
+            readingPlans: this.db.readingPlans || [],
+            readingState: {},
+        };
+    },
+
     // Persistence: Load state
     loadDB() {
-        // Production is backend-only: the server hydrates this.db after login.
-        // Do not read or seed a local demo database.
+        // Production is backend-only: every collection is filled by
+        // hydrateFromApi() after sign-in.
         if (this.apiEnabled()) {
-            this.db.__seedVersion = this.SEED_VERSION;
-            this.ensureSchema(this.db, false);
+            this.db = this.emptyLiveDb();
             return;
         }
         // Snapshot the pristine seed before a saved DB overwrites it, so
@@ -429,34 +473,212 @@ const ChurchApp = {
         if (app) app.style.display = 'flex';
     },
 
-    // ChurchConnect split-shell brand rail (v3 auth design). Matches the
-    // reference layout: dark indigo brand panel + white form surface + the
-    // signature purple->blue->teal gradient band.
-    authBrandRail(step) {
+    // The member app (member.html) is for congregation members only. If a staff
+    // account tries to sign in on this page, show them where the console lives
+    // instead of letting an admin account roam the member-only shell.
+    showMemberOnlyNotice() {
+        const auth = document.getElementById('auth-screen');
+        const app = document.getElementById('app-container');
+        if (auth) {
+            auth.style.display = 'flex';
+            auth.innerHTML = `
+                <div class="auth-shell">
+                    ${this.authHero('credentials')}
+                    <section class="auth-panel">
+                        <div class="auth-panel-top">
+                            ${this.authLockup('Member app')}
+                            ${this.authThemeToggle()}
+                        </div>
+                        <h2 class="auth-title">Staff use the <em>Ministry Console</em></h2>
+                        <p class="auth-sub">This is the Church Connect app for members. Admin and staff accounts sign in on the web console instead.</p>
+                <button type="button" class="auth-btn" id="member-only-console">${this.authIco('arrow')}<span>Open the Ministry Console</span></button>
+                        <p class="auth-switch"><button type="button" id="member-only-back">Sign in with a member account</button></p>
+                    </section>
+                </div>`;
+            this.bindAuthChrome(auth);
+            const consoleBtn = document.getElementById('member-only-console');
+            if (consoleBtn) consoleBtn.onclick = () => { window.location.href = './index.html'; };
+            const back = document.getElementById('member-only-back');
+            if (back) back.onclick = () => this.showAuthScreen('credentials');
+        }
+        if (app) app.style.display = 'none';
+    },
+
+    // ---- Auth shell (design v4) --------------------------------------------
+    // The ChurchConnect mark: arched roof + cross + congregation, drawn inline
+    // so it stays crisp at every size and needs no extra binary asset. Change
+    // the path data here and it changes on every auth screen at once.
+    authMark() {
+        return `<svg class="auth-mark-ico" viewBox="0 0 100 100" aria-hidden="true">
+                <defs>
+                    <linearGradient id="ccMarkRoof" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#25e2f6"/><stop offset="0.52" stop-color="#1d7bff"/><stop offset="1" stop-color="#8b5cf6"/>
+                    </linearGradient>
+                    <linearGradient id="ccMarkHouse" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="#2f6ff2"/><stop offset="1" stop-color="#12307e"/>
+                    </linearGradient>
+                </defs>
+                <path d="M50 12 86 47v31a2.6 2.6 0 0 1-2.6 2.6H16.6A2.6 2.6 0 0 1 14 78V47z" fill="url(#ccMarkRoof)"/>
+                <path d="M20 68c1.6-17 9.4-27 18-27 6 0 10.2 3.6 12 9.4 1.8-5.8 6-9.4 12-9.4 8.6 0 16.4 10 18 27z" fill="#eef5ff"/>
+                <path d="M50 47.5 81 73.5V88H19V73.5z" fill="url(#ccMarkHouse)"/>
+                <g fill="#fff">
+                    <rect x="43.4" y="23.5" width="7.2" height="20.5" rx="1.4"/>
+                    <rect x="37.6" y="30.6" width="18.8" height="7.2" rx="1.4"/>
+                </g>
+                <g fill="#fff">
+                    <circle cx="48" cy="66.6" r="4.7"/>
+                    <path d="M41 88v-5.4c0-4.4 3-7.4 7-7.4s7 3 7 7.4V88z"/>
+                    <circle cx="35.4" cy="71.2" r="3.1"/>
+                    <path d="M30.5 88v-4.2c0-3.3 2.2-5.5 4.9-5.5s4.9 2.2 4.9 5.5V88z"/>
+                    <circle cx="60.6" cy="71.2" r="3.1"/>
+                    <path d="M55.7 88v-4.2c0-3.3 2.2-5.5 4.9-5.5s4.9 2.2 4.9 5.5V88z"/>
+                </g>
+            </svg>`;
+    },
+
+    // "ChurchConnect / MINISTRY CONSOLE" lockup, used at the top of both panels.
+    authLockup(sub) {
+        return `<div class="auth-mark">
+                ${this.authMark()}
+                <span class="auth-mark-text">
+                    <span class="auth-mark-name">Church<b>Connect</b></span>
+                    <span class="auth-mark-sub">${esc(sub || '')}</span>
+                </span>
+            </div>`;
+    },
+
+    // Light / dark segmented switch (top right of the form panel).
+    authThemeToggle() {
+        return `<div class="auth-theme" role="group" aria-label="Colour theme">
+                <button type="button" class="auth-theme-btn" data-auth-theme="light" aria-pressed="false" title="Light mode" aria-label="Use the light theme">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2M22 12h-2.2M6.5 6.5 4.9 4.9M19.1 19.1l-1.6-1.6M6.5 17.5l-1.6 1.6M19.1 4.9l-1.6 1.6"/></svg>
+                </button>
+                <button type="button" class="auth-theme-btn" data-auth-theme="dark" aria-pressed="false" title="Dark mode" aria-label="Use the dark theme">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 14.3A8.6 8.6 0 1 1 9.7 3.4a6.9 6.9 0 0 0 10.9 10.9z"/></svg>
+                </button>
+            </div>`;
+    },
+
+    // Stroke icons for the auth forms and the hero value props.
+    authIco(name) {
+        const paths = {
+            mail: '<rect x="3" y="5.2" width="18" height="13.6" rx="2.6"/><path d="M3.6 7.4 12 13.2l8.4-5.8"/>',
+            lock: '<rect x="4.6" y="10.4" width="14.8" height="9.6" rx="2.6"/><path d="M8.2 10.4V7.8a3.8 3.8 0 0 1 7.6 0v2.6"/>',
+            eye: '<path d="M2.6 12S6.4 5.8 12 5.8 21.4 12 21.4 12 17.6 18.2 12 18.2 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="3.1"/>',
+            eyeOff: '<path d="M10.5 6.1A9.4 9.4 0 0 1 12 6c5.6 0 9.4 6 9.4 6a17.4 17.4 0 0 1-3.1 3.7"/><path d="M6.7 7.7A16.7 16.7 0 0 0 2.6 12s3.8 6 9.4 6a9.4 9.4 0 0 0 3.5-.7"/><path d="M9.9 9.9a3.1 3.1 0 0 0 4.3 4.3"/><path d="M3.6 3.6l16.8 16.8"/>',
+            user: '<circle cx="12" cy="8.2" r="3.4"/><path d="M4.8 19.6c0-3.6 3.2-5.8 7.2-5.8s7.2 2.2 7.2 5.8"/>',
+            phone: '<path d="M6.4 3.8h3.1l1.6 4-2 1.3a10.4 10.4 0 0 0 5.3 5.3l1.3-2 4 1.6v3.1a1.9 1.9 0 0 1-2.1 1.9C10.6 18.4 5.6 13.4 4.5 5.9a1.9 1.9 0 0 1 1.9-2.1z"/>',
+            building: '<path d="M4.4 20V6.4L12 3.6l7.6 2.8V20"/><path d="M3.4 20h17.2"/><path d="M9.4 20v-5.2h5.2V20"/>',
+            shield: '<path d="M12 3.4 5.4 6v5.4c0 4 2.8 7.4 6.6 8.9 3.8-1.5 6.6-4.9 6.6-8.9V6z"/><path d="M9.4 12.2l1.9 1.9 3.4-3.7"/>',
+            arrow: '<path d="M4.5 12h15"/><path d="M13.4 6l6 6-6 6"/>',
+            members: '<circle cx="9.2" cy="8.2" r="3.1"/><path d="M3 19.4c0-3.3 2.8-5.3 6.2-5.3s6.2 2 6.2 5.3"/><path d="M16.4 6.4a3 3 0 0 1 0 5.9"/><path d="M17.8 14.6c2.1.5 3.6 2 3.6 4.3"/>',
+            giving: '<path d="M12 9.4c1.2-2.3 4.4-1.7 4.4 1 0 2-2.2 3.4-4.4 5-2.2-1.6-4.4-3-4.4-5 0-2.7 3.2-3.3 4.4-1Z"/><path d="M3 15.8c1.9-1.3 3.6-1.2 5.3.2l2.1 1.8h3.9"/><path d="M14.3 17.8h4.6"/>',
+            groups: '<circle cx="12" cy="8" r="3"/><path d="M6 19.4c0-3.3 2.7-5.3 6-5.3s6 2 6 5.3"/><circle cx="4.4" cy="9.6" r="2.2"/><path d="M1.4 18.4c0-2.4 1.7-4 4-4.2"/><circle cx="19.6" cy="9.6" r="2.2"/><path d="M22.6 18.4c0-2.4-1.7-4-4-4.2"/>',
+            reports: '<path d="M4 19.6h16"/><path d="M6.6 16.4v-4.6"/><path d="M11.4 16.4V8.2"/><path d="M16.2 16.4v-6.6"/><path d="M18.6 5.4l1.9 1.9-4.3 4.3"/>',
+        };
+        return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || ''}</svg>`;
+    },
+
+    // Official four-colour Google "G" for the alternative sign-in button.
+    authGoogleLogo() {
+        return `<svg viewBox="0 0 48 48" aria-hidden="true">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+            </svg>`;
+    },
+
+    // The photographic brand hero: the left panel of the split shell. The
+    // photograph is a CSS background so it can never block the copy.
+    authHero(step) {
         const isRegister = step === 'register';
-        const isMfa = step === 'mfa';
-        const heading = isRegister ? 'Create your account' : (isMfa ? 'Secure your account' : 'Welcome back');
-        const copy = isRegister
-            ? 'One account for everything ministry - membership, giving, groups and volunteer rotas across every campus.'
-            : 'Manage membership, giving, groups and AI ministry insights from one console, across every campus.';
-        const ctaLabel = isRegister ? 'Already have an account? Sign in' : 'Create account';
+        const props = [
+            ['members', 'Members &amp; Families', 'Keep your church family connected'],
+            ['giving', 'Giving &amp; Finance', 'Track donations and manage finances'],
+            ['groups', 'Groups &amp; Ministries', 'Build stronger communities'],
+            ['reports', 'Insightful Reports', 'Make data-driven decisions'],
+        ];
         return `
-            <aside class="auth-brand-panel">
-                <div>
-                    <div class="auth-brand-mark"><img class="auth-brand-logo" src="icons/logo-emblem-128.png?v=6" alt="Maximum Miracle Centre logo"><span>ChurchConnect</span></div>
-                    <p class="auth-brand-tag">Church management platform</p>
-                </div>
-                <div>
-                    <h2 class="auth-brand-heading">${heading}</h2>
-                    <p class="auth-brand-copy">${copy}</p>
-                    <ul class="auth-brand-features">
-                        <li><span class="auth-check">&#10003;</span>Members, families &amp; spiritual milestones</li>
-                        <li><span class="auth-check">&#10003;</span>Staff rosters &amp; volunteer rotas</li>
-                        <li><span class="auth-check">&#10003;</span>Giving, pledges &amp; tax statements</li>
+            <aside class="auth-hero">
+                <div class="auth-hero-media" aria-hidden="true"><img src="icons/auth-hero-church.jpg?v=2" alt="" width="714" height="1556" fetchpriority="high" decoding="async"></div>
+                <div class="auth-hero-top">${this.authLockup(this.authOrgSubLabel())}</div>
+                <div class="auth-hero-body">
+                    <p class="auth-eyebrow">Connect <i>&bull;</i> Serve <i>&bull;</i> Grow</p>
+                    <h2 class="auth-hero-title">${isRegister ? 'Create your <em>account</em>' : 'Welcome <em>Back</em>'}</h2>
+                    <p class="auth-hero-copy">${isRegister
+                        ? 'One account for everything ministry - membership, giving, groups and volunteer rotas, across every campus.'
+                        : 'Manage membership, giving, groups and ministry insights from one powerful platform.'}</p>
+                    <ul class="auth-hero-features">
+                        ${props.map(([ico, title, sub]) => `<li><span class="auth-hero-ico">${this.authIco(ico)}</span><span><strong>${title}</strong><small>${sub}</small></span></li>`).join('')}
                     </ul>
+                    <blockquote class="auth-hero-quote">
+                        <p>&ldquo;For where two or three gather in my name, there am I with them.&rdquo;</p>
+                        <cite>Matthew 18:20</cite>
+                    </blockquote>
                 </div>
-                <button type="button" class="auth-cta" id="auth-brand-cta">${ctaLabel} &rarr;</button>
             </aside>`;
+    },
+
+    // Chrome shared by every auth screen: theme toggle, password reveal and the
+    // Google button. Called once per render, after the markup is in the DOM.
+    bindAuthChrome(scope) {
+        const root = scope || document;
+        root.querySelectorAll('.auth-theme-btn').forEach((btn) => {
+            btn.onclick = () => this.setAuthTheme(btn.dataset.authTheme);
+        });
+        root.querySelectorAll('[data-reveal]').forEach((btn) => {
+            const input = document.getElementById(btn.dataset.reveal);
+            if (!input) return;
+            // A masked field shows the struck-through eye, an open one the plain
+            // eye, so the icon always states what the next click will do.
+            const paint = () => {
+                const masked = input.type === 'password';
+                btn.innerHTML = this.authIco(masked ? 'eyeOff' : 'eye');
+                btn.setAttribute('aria-pressed', String(!masked));
+                btn.setAttribute('aria-label', masked ? 'Show password' : 'Hide password');
+            };
+            paint();
+            btn.onclick = () => {
+                input.type = input.type === 'password' ? 'text' : 'password';
+                paint();
+            };
+        });
+        const google = document.getElementById('auth-google');
+        if (google) google.onclick = () => this.handleGoogleSignIn();
+        this.syncAuthTheme();
+    },
+
+    // The toggle drives the same preference as the console theme picker, so a
+    // choice made here is still in force after signing in.
+    setAuthTheme(mode) {
+        const theme = mode === 'dark' ? 'dark' : 'light';
+        if (typeof localStorage !== 'undefined') localStorage.setItem('church2_theme', theme);
+        document.body.className = theme === 'dark' ? '' : 'theme-' + theme;
+        const picker = document.getElementById('interface-theme-select');
+        if (picker) picker.value = theme;
+        this.syncAuthTheme();
+    },
+
+    // Auth screens open light (the brand design) unless dark was chosen.
+    syncAuthTheme() {
+        const screen = document.getElementById('auth-screen');
+        if (!screen) return;
+        const stored = (typeof localStorage !== 'undefined' && localStorage.getItem('church2_theme')) || 'light';
+        const isDark = stored === 'dark';
+        screen.classList.toggle('is-dark', isDark);
+        screen.querySelectorAll('.auth-theme-btn').forEach((btn) => {
+            const active = (btn.dataset.authTheme === 'dark') === isDark;
+            btn.classList.toggle('is-active', active);
+            btn.setAttribute('aria-pressed', String(active));
+        });
+    },
+
+    // Google sign-in has no provider wired up yet; say so plainly rather than
+    // failing silently when the button is pressed.
+    handleGoogleSignIn() {
+        const note = document.getElementById('auth-mode');
+        if (note) note.textContent = 'Google sign-in is not enabled on this deployment yet - add a Google OAuth client ID to switch it on, or continue with your email and password.';
     },
 
     showAuthScreen(step, ctx) {
@@ -466,7 +688,7 @@ const ChurchApp = {
         if (!auth) return;
         auth.style.display = 'flex';
 
-                if (step === 'mfa') {
+        if (step === 'mfa') {
             // An explicit empty list (production, no provider configured) means no
             // method can actually deliver a code; an undefined list is the demo
             // fallback (accepts the demo code).
@@ -485,30 +707,25 @@ const ChurchApp = {
             const chips = methods.map((m) => `<button type="button" class="auth-demo-chip${m === ctx.method ? ' active' : ''}" data-method="${m}">${methodLabelMap[m] || 'Email me'}</button>`).join('');
             auth.innerHTML = `
                 <div class="auth-shell">
-                    ${this.authBrandRail('mfa')}
-                    <section class="auth-form-panel">
-                        <div class="auth-org">
-                            <span class="auth-logo"><img src="icons/logo-emblem-128.png?v=4" alt="Maximum Miracle Centre logo"></span>
-                            <div>
-                                <div class="auth-org-name">Church Connect</div>
-                                <div class="auth-org-sub">Ministry Console</div>
-                            </div>
+                    ${this.authHero('credentials')}
+                    <section class="auth-panel">
+                        <div class="auth-panel-top">
+                            ${this.authLockup(this.authOrgSubLabel())}
+                            ${this.authThemeToggle()}
                         </div>
-                        <h2 class="auth-title">Two-factor <span class="grad">verification</span></h2>
+                        <h2 class="auth-title">Two-factor <em>verification</em></h2>
                         <p class="auth-sub">${methodCopy}</p>
                         <form id="mfa-form" class="auth-form">
-                            <input type="text" id="mfa-code" class="auth-input" inputmode="${ctx.method === 'recovery' ? 'text' : 'numeric'}" maxlength="${ctx.method === 'recovery' ? 20 : 6}" placeholder="${ctx.method === 'recovery' ? 'XXXXXX-XXXXXX-XXXXXX' : '000000'}" autocomplete="one-time-code" aria-label="verification code" required>
-                            ${chips ? `<div class="auth-demo">${chips}</div>` : ''}
-                            <p id="mfa-status" class="auth-sub" style="font-size:0.75rem;"></p>
+                            <div class="auth-field">${this.authIco('shield')}<input type="text" id="mfa-code" class="auth-input" inputmode="${ctx.method === 'recovery' ? 'text' : 'numeric'}" maxlength="${ctx.method === 'recovery' ? 20 : 6}" placeholder="${ctx.method === 'recovery' ? 'XXXXXX-XXXXXX-XXXXXX' : '000000'}" autocomplete="one-time-code" aria-label="verification code" required></div>
+                            ${chips ? `<div class="auth-demo-chips">${chips}</div>` : ''}
+                            <p id="mfa-status" class="auth-sub" style="font-size:0.75rem; margin:12px 0 0;"></p>
                             <p id="auth-error" class="auth-error" role="alert"></p>
-                            <button type="submit" class="auth-btn" ${noMethod ? 'disabled' : ''}>Verify &amp; sign in</button>
-                            <button type="button" class="auth-link" id="mfa-resend">Resend code</button>
-                            <button type="button" class="auth-link" id="mfa-back">&larr; Back to login</button>
+                <button type="submit" class="auth-btn" ${noMethod ? 'disabled' : ''}>${this.authIco('arrow')}<span>Verify &amp; sign in</span></button>
+                            <p class="auth-switch"><button type="button" id="mfa-resend">Resend code</button><span aria-hidden="true"> &middot; </span><button type="button" id="mfa-back">Back to sign in</button></p>
                         </form>
                     </section>
-                    <div class="auth-band" aria-hidden="true"></div>
                 </div>`;
-            document.getElementById('auth-brand-cta').onclick = () => this.showAuthScreen('credentials');
+            this.bindAuthChrome(auth);
             document.getElementById('mfa-form').onsubmit = (e) => { e.preventDefault(); if (!noMethod) this.handleMfa(ctx); };
             document.getElementById('mfa-back').onclick = () => this.showAuthScreen('credentials');
             document.getElementById('mfa-resend').onclick = () => this.handleMfaRequest(ctx, ctx.method, true);
@@ -538,33 +755,30 @@ const ChurchApp = {
             const email = (ctx && ctx.email) || '';
             auth.innerHTML = `
                 <div class="auth-shell">
-                    ${this.authBrandRail('register')}
-                    <section class="auth-form-panel">
-                        <div class="auth-org">
-                            <span class="auth-logo"><img src="icons/logo-emblem-128.png?v=4" alt="Maximum Miracle Centre logo"></span>
-                            <div>
-                                <div class="auth-org-name">Church Connect</div>
-                                <div class="auth-org-sub">Ministry Console</div>
-                            </div>
+                    ${this.authHero('register')}
+                    <section class="auth-panel">
+                        <div class="auth-panel-top">
+                            ${this.authLockup(this.authOrgSubLabel())}
+                            ${this.authThemeToggle()}
                         </div>
-                        <h2 class="auth-title">Reset your <span class="grad">password</span></h2>
+                        <h2 class="auth-title">Reset your <em>password</em></h2>
                         <p class="auth-sub">${stage === 'email' ? 'Enter your account email and we will send you a reset code.' : 'Enter the reset code and your new password.'}</p>
                         <form id="forgot-form" class="auth-form">
-                            <label class="auth-label" for="forgot-email">Email</label>
-                            <input type="email" id="forgot-email" class="auth-input" placeholder="you@example.com" autocomplete="email" value="${esc(email)}" required ${stage === 'code' ? 'readonly' : ''}>
+                            <label class="auth-label" for="forgot-email">Email Address</label>
+                            <div class="auth-field">${this.authIco('mail')}<input type="email" id="forgot-email" class="auth-input" placeholder="you@example.com" autocomplete="email" value="${esc(email)}" required ${stage === 'code' ? 'readonly' : ''}></div>
                             ${stage === 'code' ? `
-                            <label class="auth-label" for="forgot-code">Reset code</label>
-                            <input type="text" id="forgot-code" class="auth-input" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" required>
-                            <label class="auth-label" for="forgot-password">New password</label>
-                            <input type="password" id="forgot-password" class="auth-input" placeholder="At least 8 characters" minlength="8" autocomplete="new-password" required>` : ''}
+                            <label class="auth-label" for="forgot-code" style="margin-top:16px;">Reset code</label>
+                            <div class="auth-field">${this.authIco('shield')}<input type="text" id="forgot-code" class="auth-input" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" required></div>
+                            <label class="auth-label" for="forgot-password" style="margin-top:16px;">New password</label>
+                            <div class="auth-field has-reveal">${this.authIco('lock')}<input type="password" id="forgot-password" class="auth-input" placeholder="At least 8 characters" minlength="8" autocomplete="new-password" required><button type="button" class="auth-reveal" data-reveal="forgot-password" aria-label="Show password" aria-pressed="false">${this.authIco('eye')}</button></div>` : ''}
                             <p id="auth-error" class="auth-error" role="alert"></p>
-                            <button type="submit" class="auth-btn">${stage === 'email' ? 'Send reset code' : 'Set new password'}</button>
-                            <button type="button" class="auth-link" id="forgot-back">&larr; Back to sign in</button>
+                <button type="submit" class="auth-btn">${this.authIco('arrow')}<span>${stage === 'email' ? 'Send reset code' : 'Set new password'}</span></button>
                         </form>
+                        <p class="auth-switch"><button type="button" id="forgot-back">Back to sign in</button></p>
+                        <p class="auth-secure">${this.authIco('shield')} Your data is secure and encrypted</p>
                     </section>
-                    <div class="auth-band" aria-hidden="true"></div>
                 </div>`;
-            document.getElementById('auth-brand-cta').onclick = () => this.showAuthScreen('credentials');
+            this.bindAuthChrome(auth);
             document.getElementById('forgot-back').onclick = () => this.showAuthScreen('credentials');
             document.getElementById('forgot-form').onsubmit = (e) => {
                 e.preventDefault();
@@ -579,36 +793,33 @@ const ChurchApp = {
         if (step === 'register') {
             auth.innerHTML = `
                 <div class="auth-shell">
-                    ${this.authBrandRail('register')}
-                    <section class="auth-form-panel">
-                        <div class="auth-org">
-                            <span class="auth-logo"><img src="icons/logo-emblem-128.png?v=4" alt="Maximum Miracle Centre logo"></span>
-                            <div>
-                                <div class="auth-org-name">Church Connect</div>
-                                <div class="auth-org-sub">Ministry Console</div>
-                            </div>
+                    ${this.authHero('register')}
+                    <section class="auth-panel">
+                        <div class="auth-panel-top">
+                            ${this.authLockup(this.authOrgSubLabel())}
+                            ${this.authThemeToggle()}
                         </div>
-                        <h2 class="auth-title">Create your <span class="grad">account</span></h2>
-                        <p class="auth-sub">Register for the ministry portal. You will be signed in right away.</p>
+                        <h2 class="auth-title">Create your <em>account</em></h2>
+                        <p class="auth-sub">${this.memberOrPhoneView() ? 'Create your account and the Church Connect app opens for you. Staff accounts are created by your administrator.' : 'Register for the ministry portal. You will be signed in right away.'}</p>
                         <form id="register-form" class="auth-form">
                             <label class="auth-label" for="reg-name">Full name</label>
-                            <input type="text" id="reg-name" class="auth-input" placeholder="Jane Wanjiku" autocomplete="name" required>
-                            <label class="auth-label" for="reg-email">Email</label>
-                            <input type="email" id="reg-email" class="auth-input" placeholder="you@example.com" autocomplete="email" required>
-                            <label class="auth-label" for="reg-phone">Phone (optional - for SMS codes)</label>
-                            <input type="tel" id="reg-phone" class="auth-input" placeholder="+254712345678" autocomplete="tel">
-                            <label class="auth-label" for="reg-password">Password</label>
-                            <input type="password" id="reg-password" class="auth-input" placeholder="At least 8 characters" minlength="8" autocomplete="new-password" required>
-                            <label class="auth-label" for="reg-branch">Branch</label>
-                            <select id="reg-branch" class="auth-input" required></select>
+                            <div class="auth-field">${this.authIco('user')}<input type="text" id="reg-name" class="auth-input" placeholder="Jane Wanjiku" autocomplete="name" required></div>
+                            <label class="auth-label" for="reg-email" style="margin-top:16px;">Email Address</label>
+                            <div class="auth-field">${this.authIco('mail')}<input type="email" id="reg-email" class="auth-input" placeholder="you@example.com" autocomplete="email" required></div>
+                            <label class="auth-label" for="reg-phone" style="margin-top:16px;">Phone (optional - for SMS codes)</label>
+                            <div class="auth-field">${this.authIco('phone')}<input type="tel" id="reg-phone" class="auth-input" placeholder="+254712345678" autocomplete="tel"></div>
+                            <label class="auth-label" for="reg-password" style="margin-top:16px;">Password</label>
+                            <div class="auth-field has-reveal">${this.authIco('lock')}<input type="password" id="reg-password" class="auth-input" placeholder="At least 8 characters" minlength="8" autocomplete="new-password" required><button type="button" class="auth-reveal" data-reveal="reg-password" aria-label="Show password" aria-pressed="false">${this.authIco('eye')}</button></div>
+                            <label class="auth-label" for="reg-branch" style="margin-top:16px;">Branch</label>
+                            <div class="auth-field">${this.authIco('building')}<select id="reg-branch" class="auth-input" required></select></div>
                             <p id="auth-error" class="auth-error" role="alert"></p>
-                            <button type="submit" class="auth-btn">Create account</button>
-                            <button type="button" class="auth-link" id="register-back">&larr; Back to sign in</button>
+                <button type="submit" class="auth-btn">${this.authIco('arrow')}<span>Create account</span></button>
                         </form>
+                        <p class="auth-switch">Already have an account? <button type="button" id="register-back">Sign in</button></p>
+                        <p class="auth-secure">${this.authIco('shield')} Your data is secure and encrypted</p>
                     </section>
-                    <div class="auth-band" aria-hidden="true"></div>
                 </div>`;
-            document.getElementById('auth-brand-cta').onclick = () => this.showAuthScreen('credentials');
+            this.bindAuthChrome(auth);
             const regBranch = document.getElementById('reg-branch');
             const localBranches = (this.db && this.db.branches) || [];
             const fillBranches = (list) => {
@@ -619,11 +830,23 @@ const ChurchApp = {
                         return `<option value="${esc(b.id)}">${esc(label)}</option>`;
                     })
                     .join('');
-                regBranch.innerHTML = options || '<option value="">No branches available</option>';
+                if (regBranch) regBranch.innerHTML = options || '<option value="">No branches available</option>';
             };
-            fillBranches(localBranches);
-            if (this.apiEnabled() && window.Church2API && Church2API.branchesPublic) {
-                Church2API.branchesPublic().then(fillBranches).catch(() => {});
+            if (regBranch) {
+                if (this.memberOrPhoneView()) {
+                    // The member app never asks for a campus - registration is
+                    // matched to the member's directory record by email.
+                    const branchLabel = regBranch.closest('form') && regBranch.closest('form').querySelector('label[for="reg-branch"]');
+                    if (branchLabel) branchLabel.style.display = 'none';
+                    const branchField = regBranch.closest('.auth-field');
+                    if (branchField) branchField.style.display = 'none';
+                    regBranch.removeAttribute('required');
+                } else {
+                    fillBranches(localBranches);
+                    if (this.apiEnabled() && window.Church2API && Church2API.branchesPublic) {
+                        Church2API.branchesPublic().then(fillBranches).catch(() => {});
+                    }
+                }
             }
             document.getElementById('register-form').onsubmit = (e) => { e.preventDefault(); this.handleRegister(); };
             document.getElementById('register-back').onclick = () => this.showAuthScreen('credentials');
@@ -635,37 +858,42 @@ const ChurchApp = {
         const apiMode = this.apiEnabled();
         auth.innerHTML = `
             <div class="auth-shell">
-                ${this.authBrandRail('credentials')}
-                <section class="auth-form-panel">
-                    <div class="auth-org">
-                        <span class="auth-logo"><img src="icons/logo-emblem-128.png?v=4" alt="Maximum Miracle Centre logo"></span>
-                        <div>
-                            <div class="auth-org-name">Church Connect</div>
-                            <div class="auth-org-sub">Ministry Console</div>
-                        </div>
+                ${this.authHero('credentials')}
+                <section class="auth-panel">
+                    <div class="auth-panel-top">
+                        ${this.authLockup(this.authOrgSubLabel())}
+                        ${this.authThemeToggle()}
                     </div>
-                    <h2 class="auth-title">Sign in to your <span class="grad">ministry console</span></h2>
-                    <p class="auth-sub">Secure access to your church's data.</p>
+                    ${this.memberOrPhoneView()
+                        ? '<h2 class="auth-title">Welcome to <em>Church Connect</em></h2>'
+                        : '<h2 class="auth-title">Sign in to your <em>ministry console</em></h2>'}
+                    ${this.memberOrPhoneView()
+                        ? '<p class="auth-sub">Members open the Church Connect app here. Staff are taken to the ministry console.</p>'
+                        : '<p class="auth-sub">Secure access to your church&rsquo;s data and tools.</p>'}
                     <form id="login-form" class="auth-form">
-                        <label class="auth-label" for="login-email">Email</label>
-                        <input type="email" id="login-email" class="auth-input" placeholder="you@maximummiracle.org" autocomplete="username" required>
-                        <label class="auth-label" for="login-password">Password</label>
-                        <input type="password" id="login-password" class="auth-input" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password" required>
+                        <label class="auth-label" for="login-email">Email Address</label>
+                        <div class="auth-field">${this.authIco('mail')}<input type="email" id="login-email" class="auth-input" placeholder="you@maximummiracle.org" autocomplete="username" required></div>
+                        <div class="auth-label-row">
+                            <label class="auth-label" for="login-password">Password</label>
+                            <button type="button" class="auth-inline-link" id="login-forgot">Forgot password?</button>
+                        </div>
+                        <div class="auth-field has-reveal">${this.authIco('lock')}<input type="password" id="login-password" class="auth-input" placeholder="Enter your password" autocomplete="current-password" required><button type="button" class="auth-reveal" data-reveal="login-password" aria-label="Show password" aria-pressed="false">${this.authIco('eye')}</button></div>
                         <p id="auth-error" class="auth-error" role="alert"></p>
-                        <p id="auth-mode" class="auth-sub" style="font-size:0.7rem; margin-top:6px;"></p>
-                        <button type="submit" class="auth-btn">Continue</button>
-                        <button type="button" class="auth-link" id="login-register">New here? Create an account</button>
-                        <button type="button" class="auth-link" id="login-forgot" style="font-size:0.8rem;">Forgot password?</button>
+                        <p id="auth-mode" class="auth-sub" style="font-size:0.75rem; margin:8px 0 0;"></p>
+                        <button type="submit" class="auth-btn">${this.authIco('arrow')}<span>Continue</span></button>
                     </form>
+                    <div class="auth-or">OR</div>
+                    <button type="button" class="auth-google" id="auth-google">${this.authGoogleLogo()}<span>Sign in with Google</span></button>
+                    <p class="auth-switch">New to Church Connect? <button type="button" id="login-register">Create an account</button></p>
+                    <p class="auth-secure">${this.authIco('shield')} Your data is secure and encrypted</p>
                     ${apiMode ? '' : `
                     <div class="auth-demo" role="status">
-                        <span>Backend not connected yet. On your computer run npm run dev (or START-APP.bat). On the live site, wait a minute and reload.</span>
+                        <span>${backendOffMessage()}</span>
                     </div>
                     `}
                 </section>
-                <div class="auth-band" aria-hidden="true"></div>
             </div>`;
-        document.getElementById('auth-brand-cta').onclick = () => this.showAuthScreen('register');
+        this.bindAuthChrome(auth);
         document.getElementById('login-form').onsubmit = (e) => { e.preventDefault(); this.handleLogin(); };
         document.getElementById('login-register').onclick = () => this.showAuthScreen('register');
         const forgotBtn = document.getElementById('login-forgot');
@@ -676,7 +904,10 @@ const ChurchApp = {
     initApiAuth() {
         if (Church2API.getToken()) {
             Church2API.me()
-                .then(({ user }) => { this.applyUser(user); this.showApp(); this.hydrateThenRender(); })
+                .then(({ user }) => {
+                    if (this.memberEntry() && user.role !== 'member') { Church2API.logout(); this.session.currentUser = null; this.showMemberOnlyNotice(); return; }
+                    this.applyUser(user); this.showApp(); this.hydrateThenRender();
+                })
                 .catch(() => { Church2API.logout(); this.showAuthScreen('credentials'); });
         } else {
             this.showAuthScreen('credentials');
@@ -685,6 +916,12 @@ const ChurchApp = {
 
     _finishApiLogin(user) {
         // The JWT is already stored by the API client; never persist the password.
+        if (this.memberEntry() && user.role !== 'member') {
+            if (window.Church2API) Church2API.logout();
+            this.session.currentUser = null;
+            this.showMemberOnlyNotice();
+            return;
+        }
         this.applyUser(user);
         this.showApp();
         this.hydrateThenRender();
@@ -761,28 +998,30 @@ const ChurchApp = {
         if (failed.size) this.showDataWarning([...failed]);
     },
 
-    // Merge one fetched slice into this.db using the same rules as before:
-    // members/branches/churches/events only replace when non-empty so an
-    // unseeded backend can't blank the UI, everything else replaces freely.
+    // Merge one fetched slice into this.db. The database is authoritative: what
+    // it returns replaces what we hold, including an empty list, so a table with
+    // no rows renders its empty state instead of silently keeping demo rows.
     applyHydrateSlice(name, data) {
         if (data === undefined) return;
-        if (name === 'branches') { if (Array.isArray(data) && data.length) this.db.branches = data; return; }
+        if (name === 'branches') { if (Array.isArray(data)) this.db.branches = data; return; }
         if (name === 'churches') {
-            if (Array.isArray(data) && data.length) {
+            if (Array.isArray(data)) {
                 this.db.churches = data;
-                this.church = data[0];
-                if (this.session.churchId === (data[0] || {}).id) this.session.churchName = data[0].name;
+                if (data.length) {
+                    this.church = data[0];
+                    if (this.session.churchId === data[0].id) this.session.churchName = data[0].name;
+                }
             }
             return;
         }
-        if (name === 'members') { if (Array.isArray(data) && data.length) this.db.members = data; return; }
+        if (name === 'members') { if (Array.isArray(data)) this.db.members = data; return; }
         if (name === 'transactions') { if (Array.isArray(data)) this.db.transactions = data; return; }
         if (name === 'attendance') { if (Array.isArray(data)) this.db.attendance = data; return; }
         if (name === 'groups') { if (Array.isArray(data)) this.db.groups = data; return; }
         if (name === 'followUps') { if (Array.isArray(data)) this.db.followUps = data; return; }
         if (name === 'announcements') { if (Array.isArray(data)) this.db.announcements = data; return; }
         if (name === 'prayers') { if (Array.isArray(data)) this.db.prayerRequests = data; return; }
-        if (name === 'events') { if (Array.isArray(data) && data.length) this.db.events = data; return; }
+        if (name === 'events') { if (Array.isArray(data)) this.db.events = data; return; }
         if (name === 'campaigns') { if (Array.isArray(data)) this.db.campaigns = data; return; }
         if (name === 'recurringGifts') { if (Array.isArray(data)) this.db.recurringGifts = data; return; }
         if (name === 'careInbox') { if (Array.isArray(data)) this.db.careInbox = data; return; }
@@ -824,7 +1063,8 @@ const ChurchApp = {
             .then((r) => { if (onOk) try { onOk(r); } catch (e) { console.error(e); } })
             .catch((e) => {
                 console.error('Sync failed:', e);
-                if (this.toast) this.toast('Saved locally, but not synced to the server.', 'error');
+                const why = e && e.message ? ` (${e.message})` : '';
+                if (this.toast) this.toast('Saved locally, but not synced to the server.' + why, 'error');
             });
     },
 
@@ -880,21 +1120,22 @@ const ChurchApp = {
         }
 
         // Production is backend-only - there are no local accounts.
-        if (err) err.textContent = 'Backend not connected. On your computer run npm run dev (or START-APP.bat); on the live site wait a minute and reload.';
+        if (err) err.textContent = backendOffMessage();
     },
 
     handleRegister() {
         const err = document.getElementById('auth-error');
         if (!this.apiEnabled()) {
-            if (err) err.textContent = 'Backend not connected. On your computer run npm run dev (or START-APP.bat); on the live site wait a minute and reload.';
+            if (err) err.textContent = backendOffMessage();
             return;
         }
         const name = (document.getElementById('reg-name').value || '').trim();
         const email = (document.getElementById('reg-email').value || '').trim().toLowerCase();
         const password = document.getElementById('reg-password').value || '';
-        const branchId = document.getElementById('reg-branch').value;
+        const branchEl = document.getElementById('reg-branch');
+        const branchId = branchEl ? branchEl.value : '';
         const phone = (document.getElementById('reg-phone').value || '').trim();
-        if (!name || !email || !password || !branchId) {
+        if (!name || !email || !password) {
             if (err) err.textContent = 'Please fill in all fields.';
             return;
         }
@@ -902,7 +1143,7 @@ const ChurchApp = {
             if (err) err.textContent = 'Password must be at least 8 characters.';
             return;
         }
-        Church2API.register({ name, email, password, branchId, phone: phone || undefined })
+        Church2API.register({ name, email, password, branchId: branchId || undefined, phone: phone || undefined })
             .then((r) => {
                 if (r && r.token) { Church2API.completePasswordLogin(r); this._finishApiLogin(r.user); }
             })
@@ -913,7 +1154,7 @@ const ChurchApp = {
         const status = document.getElementById('mfa-status');
         const err = document.getElementById('auth-error');
         if (!this.apiEnabled()) {
-            if (status) status.textContent = 'Backend not connected yet - on your computer run npm run dev, or wait a minute on the live site and reload.';
+            if (status) status.textContent = backendOffMessage();
             return;
         }
         const m = method || (ctx && ctx.method) || 'email';
@@ -944,14 +1185,14 @@ const ChurchApp = {
         }
 
         // Production is backend-only - there is no demo code path.
-        if (err) err.textContent = 'Backend not connected yet - on your computer run npm run dev, or wait a minute on the live site and reload.';
+        if (err) err.textContent = backendOffMessage();
     },
 
     handleForgotRequest(ctx) {
         const err = document.getElementById('auth-error');
         const email = (document.getElementById('forgot-email').value || '').trim().toLowerCase();
         if (!this.apiEnabled()) {
-            if (err) err.textContent = 'Backend not connected yet - on your computer run npm run dev, or wait a minute on the live site and reload.';
+            if (err) err.textContent = backendOffMessage();
             return;
         }
         if (!email) { if (err) err.textContent = 'Enter your email address.'; return; }
@@ -1163,6 +1404,105 @@ const ChurchApp = {
         } catch (e) {
             this.toast(e.message || 'Could not sign out all devices.');
         }
+    },
+
+    // ---- Church Connect member app helpers ---------------------------------
+    // The product serves two experiences from one account system: members
+    // install the Church Connect app on their phone; staff use the Ministry
+    // Console on the web. These helpers drive the member-first sign-in copy,
+    // the install button on the member Home tab, and phone-vs-console brand.
+    // True when this page is the dedicated member app shell (member.html).
+    // That entry only ever signs in congregation members; staff belong on the
+    // web console (index.html), so the member app never exposes admin chrome.
+    memberEntry() {
+        return typeof document !== 'undefined' && !!document.body && document.body.dataset.app === 'member';
+    },
+    memberOrPhoneView() {
+        return this.memberEntry() || this.isPhoneView();
+    },
+    isPhoneView() {
+        return typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(max-width: 860px)').matches;
+    },
+    authOrgSubLabel() {
+        return this.memberOrPhoneView() ? 'Church app' : 'Ministry Console';
+    },
+    isIOSDevice() {
+        return typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    },
+    setupInstallPrompt() {
+        if (typeof window === 'undefined') return;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            this._deferredInstallPrompt = e;
+            this.maybeInjectInstallChip();
+        });
+        window.addEventListener('appinstalled', () => {
+            this._deferredInstallPrompt = null;
+            this.removeInstallChip();
+        });
+    },
+    installOffered() {
+        if (!this.isRealMemberOnPhone()) return false;
+        if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return false;
+        if (navigator.standalone === true) return false;
+        return Boolean(this._deferredInstallPrompt) || this.isIOSDevice();
+    },
+    maybeInjectInstallChip() {
+        if (!this.installOffered()) return;
+        const home = document.getElementById('mobile-home');
+        if (!home || document.getElementById('cc-install-chip')) return;
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.id = 'cc-install-chip';
+        chip.className = 'cc-install-chip';
+        const needsIosHelp = this.isIOSDevice() && !this._deferredInstallPrompt;
+        chip.innerHTML = '<span class="cc-install-ico">' + (needsIosHelp ? '&#128241;' : '&#11015;') + '</span>' +
+            '<span>Install Church Connect<span class="cc-install-sub">' + (needsIosHelp ? 'Tap Share, then Add to Home Screen' : 'Open Church Connect anytime, even offline') + '</span></span>' +
+            '<span class="cc-install-go">&rsaquo;</span>';
+        chip.onclick = () => this.installApp();
+        home.insertBefore(chip, home.firstChild);
+    },
+    removeInstallChip() {
+        const chip = document.getElementById('cc-install-chip');
+        if (chip && chip.parentNode) chip.parentNode.removeChild(chip);
+    },
+    installApp() {
+        if (this._deferredInstallPrompt) {
+            const promptEvent = this._deferredInstallPrompt;
+            this._deferredInstallPrompt = null;
+            promptEvent.prompt();
+            const choice = promptEvent.userChoice;
+            if (choice && typeof choice.then === 'function') {
+                choice.then((r) => {
+                    if (!r || r.outcome !== 'accepted') this._deferredInstallPrompt = promptEvent;
+                    else this.removeInstallChip();
+                }).catch(() => { this._deferredInstallPrompt = promptEvent; });
+            }
+            return;
+        }
+        if (this.isIOSDevice()) this.showInstallHelp();
+    },
+    showInstallHelp() {
+        if (document.getElementById('cc-install-help')) return;
+        const overlay = document.createElement('div');
+        overlay.className = 'cc-install-help';
+        overlay.id = 'cc-install-help';
+        overlay.innerHTML = `
+            <div class="cc-install-help-card">
+                <h3>Install Church Connect</h3>
+                <p class="cc-install-help-sub">Keep your church in your pocket, one tap from the Home screen.</p>
+                <ol>
+                    <li>Tap the <b>Share</b> button in your browser toolbar.</li>
+                    <li>Choose <b>Add to Home Screen</b>.</li>
+                    <li>Tap <b>Add</b>, then open Church Connect like any other app.</li>
+                </ol>
+                <button type="button" class="cc-install-help-btn">Got it</button>
+            </div>`;
+        const close = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+        const doneBtn = overlay.querySelector('.cc-install-help-btn');
+        if (doneBtn) doneBtn.onclick = close;
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        document.body.appendChild(overlay);
     },
 
     logout() {
@@ -1517,6 +1857,24 @@ const ChurchApp = {
         document.getElementById('tx-member-select')?.addEventListener('change', () => this.refreshTxPledgePanel());
         document.getElementById('tx-amount-input')?.addEventListener('input', () => this.refreshTxPledgePanel());
 
+        // Type-to-find contributor: typing a member's name picks that person in
+        // the list, so giving and pledge entries can be recorded by typing the
+        // name instead of scrolling a long dropdown.
+        const txMemberSearch = document.getElementById('tx-member-search');
+        if (txMemberSearch) {
+            const applyTypedMember = () => {
+                const typed = txMemberSearch.value.trim().toLowerCase();
+                if (!typed) return;
+                const match = (this.db.members || []).find(m => `${m.firstName} ${m.lastName}`.toLowerCase() === typed);
+                const sel = document.getElementById('tx-member-select');
+                if (!match || !sel) return;
+                sel.value = match.id;
+                this.refreshTxPledgePanel();
+            };
+            txMemberSearch.addEventListener('change', applyTypedMember);
+            txMemberSearch.addEventListener('input', applyTypedMember);
+        }
+
         // Web "Log Contribution Offline" mirrors the member app Give tab.
         document.querySelectorAll('#tx-quick-chips .give-chip').forEach((chip) => {
             chip.addEventListener('click', () => this.pickTxQuickAmount(chip));
@@ -1553,15 +1911,19 @@ const ChurchApp = {
             e.preventDefault();
             const church = this.church || (Array.isArray(this.db.churches) && this.db.churches[0]);
             if (!church) { this.toast('Church profile not loaded yet.', 'error'); return; }
+            // Read defensively: a cached older page may not carry the channel inputs.
+            const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
             const payload = {
-                name: document.getElementById('church-name-input').value.trim(),
-                shortName: document.getElementById('church-short-name-input').value.trim(),
-                tagline: document.getElementById('church-tagline-input').value.trim(),
-                website: document.getElementById('church-website-input').value.trim(),
-                youtubeChannel: document.getElementById('church-youtube-input').value.trim(),
-                contactEmail: document.getElementById('church-contact-email-input').value.trim(),
-                contactPhone: document.getElementById('church-contact-phone-input').value.trim(),
-                newsBullet: document.getElementById('church-news-bullet-input').value.trim(),
+                name: val('church-name-input'),
+                shortName: val('church-short-name-input'),
+                tagline: val('church-tagline-input'),
+                website: val('church-website-input'),
+                youtubeChannel: val('church-youtube-input'),
+                facebookUrl: val('church-facebook-input'),
+                tiktokUrl: val('church-tiktok-input'),
+                contactEmail: val('church-contact-email-input'),
+                contactPhone: val('church-contact-phone-input'),
+                newsBullet: val('church-news-bullet-input'),
             };
             if (!payload.name) { this.toast('Church name is required.', 'error'); return; }
             this.apiWrite(() => Church2API.updateChurch(church.id, payload), () => {
@@ -1656,6 +2018,15 @@ const ChurchApp = {
             if (previous && [...sel.options].some(o => o.value === previous)) sel.value = previous;
             else if (this.session.currentBranch && [...sel.options].some(o => o.value === this.session.currentBranch)) sel.value = this.session.currentBranch;
         });
+
+        // The same roster feeds the type-to-find box, so the contributor can be
+        // typed by name.
+        const nameList = document.getElementById('tx-member-options');
+        if (nameList) {
+            nameList.innerHTML = inScope
+                .map(m => `<option value="${esc(m.firstName + ' ' + m.lastName)}"></option>`)
+                .join('');
+        }
     },
 
     // Preview picker: lets an admin watch the member phone as a member of any
@@ -1732,6 +2103,7 @@ const ChurchApp = {
             appRoot.classList.toggle('mode-mobile', activeTab === 'mobile_preview');
             const realRole = (this.session.currentUser && this.session.currentUser.role) || role;
             appRoot.classList.toggle('mode-member', realRole === 'member');
+            if (this.isRealMemberOnPhone()) document.title = 'Church Connect';
         }
 
         // Sync header displays. "global" is a valid selection (All Branches) that
@@ -3981,6 +4353,42 @@ const ChurchApp = {
         this.toast(amount > 0 ? `Pledge of ${window.money(amount)} recorded for ${member.firstName} ${member.lastName}.` : `Pledge cleared for ${member.firstName} ${member.lastName}.`);
     },
 
+    // Save the pledged amount edited inside the pledge modal, then re-open the
+    // modal so the pledged / given / remaining figures and the red-or-green
+    // status refresh immediately.
+    savePledgeFromModal(memberId) {
+        const member = this.db.members.find(m => m.id === memberId);
+        if (!member) return;
+        const input = document.getElementById('pledge-modal-edit-amount');
+        const amount = parseFloat(input ? input.value : '') || 0;
+        if (amount < 0) { this.toast('Pledge amount cannot be negative.', 'error'); return; }
+        const given = parseFloat(member.pledgePaid) || 0;
+        if (amount > 0 && amount < given) {
+            this.toast(`${member.firstName} has already given ${window.money(given)} - the pledge cannot be less than that.`, 'error');
+            return;
+        }
+        member.pledgeAmount = amount > 0 ? amount : null;
+        this.saveDB();
+        this.syncMemberProfile(member);
+        this.renderAll();
+        const p = this.memberPledge(member);
+        this.viewPledgeDetails(p.amount, p.paid, p.balance, member.id);
+        this.toast(amount > 0
+            ? `Pledge of ${window.money(amount)} saved for ${member.firstName} ${member.lastName} - ${window.money(p.balance)} still owed.`
+            : `Pledge cleared for ${member.firstName} ${member.lastName}.`);
+    },
+
+    // Typing a different person's name in the pledge modal switches the modal -
+    // and its Save / Pay buttons - to that person's pledge.
+    switchPledgePerson(name) {
+        const typed = String(name || '').trim().toLowerCase();
+        if (!typed) return;
+        const member = (this.db.members || []).find(m => `${m.firstName} ${m.lastName}`.toLowerCase() === typed);
+        if (!member) { this.toast('No member matches that name - choose one from the list.', 'error'); return; }
+        const p = this.memberPledge(member);
+        this.viewPledgeDetails(p.amount, p.paid, p.balance, member.id);
+    },
+
     // Log a pledge payment for this individual with the means they used to pay.
     recordMemberPledgePayment(memberId) {
         const member = this.db.members.find(m => m.id === memberId);
@@ -4025,7 +4433,7 @@ const ChurchApp = {
         this.saveDB();
         this.syncMemberProfile(member);
         this.apiWrite(
-            () => Church2API.recordTransaction({ memberId: member.id, amount, category: 'Pledge', paymentMethod: method, date, memberName: newTx.memberName, branchId: member.branchId }),
+            () => Church2API.recordTransaction({ memberId: member.id, amount, category: 'Pledge', paymentMethod: method, date, memberName: newTx.memberName, branchId: member.branchId, campaignId: newTx.campaignId || undefined }),
             (srv) => { if (srv && srv.id) { newTx.id = srv.id; if (srv.receiptNumber) newTx.receiptNumber = srv.receiptNumber; } }
         );
         return { received: paidBefore + amount, remaining: Math.max(0, (parseFloat(member.pledgeAmount) || 0) - (paidBefore + amount)) };
@@ -4426,6 +4834,17 @@ const ChurchApp = {
         return { amount, paid, balance: Math.max(0, amount - paid) };
     },
 
+    // How much this member has promised to one project (0 when they have not
+    // pledged to it). Pledges are kept as a list because a member may promise to
+    // several projects at once - and because each project then shows the total
+    // of everybody's promises, which is what a communal fund looks like.
+    memberPledgeTo(member, campaign) {
+        if (!member || !campaign) return 0;
+        const list = Array.isArray(member.pledges) ? member.pledges : [];
+        const hit = list.find(p => p && p.campaignId === campaign.id);
+        return hit ? (parseFloat(hit.amount) || 0) : 0;
+    },
+
     // Resolve the pledge behind a transaction: campaign-backed pledge payments
     // report the campaign's promised/removed/remaining; otherwise the member's
     // pledged amount, what they have contributed and the balance still owed.
@@ -4525,6 +4944,14 @@ const ChurchApp = {
         set('tx-pledge-paid', money(pledge.paid));
         set('tx-pledge-balance', money(pledge.balance));
 
+        // The balance stays red while money is still owed and turns green once
+        // the pledge is cleared.
+        const balanceStat = document.querySelector('.tx-pledge-balance-stat');
+        if (balanceStat) {
+            balanceStat.classList.toggle('is-outstanding', pledge.balance > 0);
+            balanceStat.classList.toggle('is-paid', pledge.amount > 0 && pledge.balance <= 0);
+        }
+
         // "Paid via" pills, same as the member app My Pledge card.
         const methodsEl = document.getElementById('tx-pledge-methods');
         if (methodsEl) {
@@ -4559,13 +4986,40 @@ const ChurchApp = {
     // ---- Projects & fundraising campaigns --------------------------------
     // Shared metrics for a campaign: funded progress plus movement over the
     // last 14 days, so every project card can honestly show increase/decrease.
-    campaignMetrics(c, inScope) {
+    campaignMetrics(c, inScope, memberId) {
         const goal = parseFloat(c.goal) || 0;
         const tx = (this.db.transactions || []).filter(t =>
             (t.campaignId ? t.campaignId === c.id : t.category === c.fundCategory) && inScope(t.branchId));
-        const raised = (parseFloat(c.raisedOffset) || 0) + tx.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-        const remaining = Math.max(0, goal - raised);
-        const pct = goal ? Math.min(100, Math.round((raised / goal) * 100)) : 0;
+        // The server sends an aggregate total. When present it is authoritative:
+        // a signed-in member's own transaction slice must never be mistaken for
+        // the whole project's progress.
+        const raised = c.raised != null
+            ? (Number(c.raised) || 0)
+            : (parseFloat(c.raisedOffset) || 0) + tx.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+        // The promise side of the project: what members have pledged to it. The
+        // server sends the church-wide sum; in demo/offline mode the loaded
+        // member rows are summed instead. This is the communal figure - one
+        // member's own promise is never mistaken for the whole project.
+        const pledged = c.pledged != null
+            ? (Number(c.pledged) || 0)
+            : (this.db.members || []).reduce((s, m) => s + this.memberPledgeTo(m, c), 0);
+        const pledgeCount = c.pledgeCount != null
+            ? (Number(c.pledgeCount) || 0)
+            : (this.db.members || []).filter(m => this.memberPledgeTo(m, c) > 0).length;
+        // A promise counts as progress and money that arrived without a promise
+        // counts too, so the larger of the two is how far the project has come.
+        // That never counts a pledge twice once it has been paid.
+        const secured = Math.max(pledged, raised);
+        // What this one account has put in. The tx list above is already
+        // narrowed to this campaign and this branch, so filtering by member
+        // leaves that member's own slice. An app account belongs to one person
+        // while a project is funded by the whole campus, so both are kept.
+        const mine = memberId == null
+            ? null
+            : tx.filter(t => t.memberId === memberId)
+                .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+        const remaining = Math.max(0, goal - secured);
+        const pct = goal ? Math.min(100, Math.round((secured / goal) * 100)) : 0;
         const now = Date.now();
         const day = 86400000;
         const sumSince = (cutoff) => tx
@@ -4590,7 +5044,11 @@ const ChurchApp = {
                 trend = { dir: 'flat', label: 'Steady this week', pct: 0, delta: 0 };
             }
         }
-        return { goal, raised, remaining, pct, trend };
+        // What this member promised to this project, next to what they gave.
+        const myPledge = memberId == null
+            ? null
+            : this.memberPledgeTo((this.db.members || []).find(m => m.id === memberId), c);
+        return { goal, raised, pledged, pledgeCount, secured, mine, myPledge, remaining, pct, trend };
     },
 
     fundCategoryBadge(category, pledge) {
@@ -4608,34 +5066,64 @@ const ChurchApp = {
         return `<span class="campaign-category-badge cat-${cls}">${esc(labels[key])}</span>`;
     },
 
-    // Every pledge mention is a button-form: its face shows the amount received
-    // and the money remaining, and clicking opens the full breakdown plus - for
-    // an individual's pledge - a form to record a payment and the means used.
+    // Every pledge mention is a button-form that spells out the three figures
+    // that matter: what was pledged, what has been given, and what is still
+    // owed. While a balance remains the button is red; once the pledge is fully
+    // paid it turns green. Clicking opens the breakdown and the payment form.
     pledgeStatusButton(pledged, removed, remaining, memberId) {
         const money = (n) => window.money(n, { decimals: 0 });
-        const left = Math.max(0, remaining);
-        const paid = Math.max(0, removed);
-        const label = (paid > 0 || left > 0)
-            ? `Pledge \u00b7 ${money(paid)} received \u00b7 ${left > 0 ? `${money(left)} left` : 'Fully paid'}`
-            : 'Pledge';
-        const args = [esc(String(pledged)), esc(String(paid)), esc(String(left))];
+        const promised = Math.max(0, parseFloat(pledged) || 0);
+        const given = Math.max(0, parseFloat(removed) || 0);
+        const left = Math.max(0, parseFloat(remaining) || 0);
+        const settled = promised > 0 && left <= 0;
+        const state = settled ? 'is-paid' : (left > 0 ? 'is-outstanding' : '');
+        const figures = promised > 0
+            ? `Pledged ${money(promised)} \u00b7 Given ${money(given)} \u00b7 ${left > 0 ? `${money(left)} remaining` : 'Fully paid'}`
+            : (given > 0 ? `Given ${money(given)}` : 'Pledge');
+        const title = `Pledged ${money(promised)} \u00b7 Given ${money(given)} \u00b7 Remaining ${money(left)}`;
+        const status = settled ? 'Pledge fully paid.' : `${money(left)} still owed.`;
+        const args = [esc(String(promised)), esc(String(given)), esc(String(left))];
         if (memberId) args.push(`'${esc(memberId)}'`);
-        return `<button type="button" class="btn btn-secondary btn-sm pledge-view-btn" title="Pledged ${money(pledged)} \u00b7 Received ${money(paid)} \u00b7 Remaining ${money(left)}" onclick="ChurchApp.viewPledgeDetails(${args.join(', ')})">${label}</button>`;
+        return `<button type="button" class="btn btn-secondary btn-sm pledge-view-btn ${state}" data-pledge-state="${settled ? 'paid' : 'outstanding'}" title="${title}" aria-label="${status} ${title}" onclick="ChurchApp.viewPledgeDetails(${args.join(', ')})">${figures}</button>`;
     },
 
-    // "Pledge" = the money promised. The pledge button opens a breakdown of how
-    // much was promised, the amount received so far and the money remaining -
-    // and for an individual member it doubles as a payment form (amount + the
-    // means used to pay).
+    // "Pledge" = the money promised. The pledge button opens the full picture:
+    // what was pledged, what has been given and what is still owed. While a
+    // balance remains the whole panel is flagged red; once it is paid off it
+    // turns green. The person who pledged can be typed/changed here and the
+    // pledged amount corrected, and for an individual member it doubles as the
+    // payment form (amount + the means used to pay).
     viewPledgeDetails(pledged, removed, remaining, memberId) {
         const modal = document.getElementById('receipt-modal');
         if (!modal) return;
         const money = (n) => window.money(n, { decimals: 0 });
         const member = memberId ? (this.db.members || []).find(m => m.id === memberId) : null;
         const pledge = member ? this.memberPledge(member) : null;
-        const payForm = member && pledge && pledge.amount > 0 ? (pledge.balance > 0 ? `
+        const promised = pledge ? pledge.amount : Math.max(0, parseFloat(pledged) || 0);
+        const given = pledge ? pledge.paid : Math.max(0, parseFloat(removed) || 0);
+        const left = pledge ? pledge.balance : Math.max(0, parseFloat(remaining) || 0);
+        const settled = promised > 0 && left <= 0;
+        const state = settled ? 'is-paid' : 'is-outstanding';
+        const personName = member ? `${member.firstName} ${member.lastName}` : '';
+        const roster = (this.db.members || [])
+            .map(m => `<option value="${esc(m.firstName + ' ' + m.lastName)}"></option>`)
+            .join('');
+        const editForm = member ? `
+                <div class="pledge-edit-form">
+                    <div style="flex:1 1 220px; min-width:200px;">
+                        <label class="form-label" for="pledge-modal-person">Person who pledged</label>
+                        <input list="pledge-modal-people" id="pledge-modal-person" class="form-control" value="${esc(personName)}" placeholder="Type a member name" onchange="ChurchApp.switchPledgePerson(this.value)">
+                    </div>
+                    <div style="flex:0 1 160px; min-width:140px;">
+                        <label class="form-label" for="pledge-modal-edit-amount">Pledged (Ksh)</label>
+                        <input type="number" id="pledge-modal-edit-amount" class="form-control" min="0" step="1" value="${promised > 0 ? promised : ''}" placeholder="0">
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="ChurchApp.savePledgeFromModal('${esc(member.id)}')">Save Pledge</button>
+                </div>
+                <datalist id="pledge-modal-people">${roster}</datalist>` : '';
+        const payForm = member && promised > 0 ? (left > 0 ? `
                 <div class="pledge-pay-form" style="margin-top:14px; border-top:1px dashed rgba(150,150,150,0.35); padding-top:12px;">
-                    <div style="font-weight:700; margin-bottom:8px;">Pay your pledge</div>
+                    <div style="font-weight:700; margin-bottom:8px;">Pay this pledge</div>
                     <div style="display:flex; flex-direction:column; gap:8px;">
                         <input type="number" id="pledge-modal-pay-amount" class="form-control" min="1" step="1" placeholder="Payment amount (Ksh)" aria-label="Pledge payment amount">
                         <select id="pledge-modal-pay-method" class="select-custom" aria-label="Pledge payment method">
@@ -4643,26 +5131,33 @@ const ChurchApp = {
                         </select>
                         <button type="button" class="btn btn-primary-gradient btn-sm" onclick="ChurchApp.recordPledgeFromButton('${esc(member.id)}')">Record Pledge Payment</button>
                     </div>
-                </div>` : '<div style="margin-top:12px; font-size:0.8rem; color:var(--accent-gold);">This pledge is fully paid.</div>') : '';
+                </div>` : '<div style="margin-top:12px; font-size:0.8rem; color:var(--success-green); font-weight:600;">This pledge is fully paid.</div>') : '';
         modal.innerHTML = `
             <div class="modal-card statement-card" role="dialog" aria-modal="true" aria-labelledby="pledge-modal-title">
                 <div class="modal-header">
-                    <h3 id="pledge-modal-title">Pledge Details</h3>
+                    <h3 id="pledge-modal-title">Pledge Details${personName ? ' - ' + esc(personName) : ''}</h3>
                     <button class="modal-close" aria-label="Close pledge details" onclick="ChurchApp.closeModal('receipt-modal')">x</button>
                 </div>
                 <div class="modal-body">
+                    <div class="pledge-status-banner ${state}">
+                        <span>${settled ? 'Fully paid' : 'Outstanding - still being paid'}</span>
+                        <span class="pledge-figure">Pledged ${money(promised)}</span>
+                        <span class="pledge-figure">Given ${money(given)}</span>
+                        <span class="pledge-figure pledge-figure-remaining">${left > 0 ? `${money(left)} remaining` : 'Nothing remaining'}</span>
+                    </div>
                     <div class="pledge-detail-row">
                         <span>Pledged (Money Promised)</span>
-                        <strong>${money(pledged)}</strong>
+                        <strong>${money(promised)}</strong>
                     </div>
                     <div class="pledge-detail-row">
-                        <span>Amount Received</span>
-                        <strong>${money(removed)}</strong>
+                        <span>Given So Far</span>
+                        <strong>${money(given)}</strong>
                     </div>
-                    <div class="pledge-detail-row pledge-detail-balance">
+                    <div class="pledge-detail-row pledge-detail-balance ${state}">
                         <span>Money Remaining</span>
-                        <strong>${money(remaining)}</strong>
+                        <strong>${money(left)}</strong>
                     </div>
+                    ${editForm}
                     ${payForm}
                 </div>
             </div>`;
@@ -4676,9 +5171,11 @@ const ChurchApp = {
     campaignFiguresHtml(c, m, containerClass = 'campaign-figures') {
         const money = (n) => window.money(n, { decimals: 0 });
         const isPledge = String(c.fundCategory || '').toLowerCase() === 'pledge';
+        // A project shows both sides of a communal fund: what members have
+        // pledged, what has actually come in, and what is still to cover.
         const figures = isPledge
-            ? this.pledgeStatusButton(m.goal, m.raised, m.remaining)
-            : `<strong>${money(m.raised)}</strong> raised of ${money(m.goal)} goal &middot; <strong>${money(m.remaining)}</strong> remaining`;
+            ? this.pledgeStatusButton(m.pledged > 0 ? m.pledged : m.goal, m.raised, m.remaining)
+            : `<strong>${money(m.pledged)}</strong> pledged &middot; <strong>${money(m.raised)}</strong> received of ${money(m.goal)} goal &middot; <strong>${money(m.remaining)}</strong> still needed`;
         return `<div class="${containerClass}">${figures}</div>`;
     },
 
@@ -4834,13 +5331,15 @@ const ChurchApp = {
     churchContactInfo() {
         const church = this.church || (Array.isArray(this.db.churches) && this.db.churches[0]) || null;
         const brand = window.MMC_BRAND || {};
-        let savedYt = '';
-        try { savedYt = (typeof localStorage !== 'undefined' && localStorage.getItem('church2_youtube_channel')) || ''; } catch (e) { /* private mode */ }
+        // The churches row is the single source of truth for these links, so a
+        // link the admin clears really disappears for members everywhere.
         return {
             contactEmail: (church && church.contactEmail) || brand.contactEmail || '',
             contactPhone: (church && church.contactPhone) || brand.contactPhone || '',
             newsBullet: (church && church.newsBullet) || brand.newsBullet || '',
-            youtubeChannel: (church && church.youtubeChannel) || savedYt || brand.youtubeChannel || ''
+            youtubeChannel: (church && church.youtubeChannel) || brand.youtubeChannel || '',
+            facebookUrl: (church && church.facebookUrl) || brand.facebookUrl || '',
+            tiktokUrl: (church && church.tiktokUrl) || brand.tiktokUrl || ''
         };
     },
 
@@ -4853,6 +5352,8 @@ const ChurchApp = {
         set('church-tagline-input', church.tagline);
         set('church-website-input', church.website);
         set('church-youtube-input', church.youtubeChannel);
+        set('church-facebook-input', church.facebookUrl);
+        set('church-tiktok-input', church.tiktokUrl);
         set('church-contact-email-input', church.contactEmail);
         set('church-contact-phone-input', church.contactPhone);
         set('church-news-bullet-input', church.newsBullet);
@@ -6384,6 +6885,7 @@ const ChurchApp = {
     renderMobileAnnouncements() {
         const list = document.getElementById('mobile-announcements-list');
         if (!list) return;
+        const showAll = this.mobileHomeShowAll || (this.mobileHomeShowAll = { announcements: false, events: false });
         // Data isolation: church-wide news plus this member's own campus only.
         // Group-targeted announcements appear under "Group Announcements" and
         // only for groups the member joined (see renderMobileGroups).
@@ -6392,16 +6894,53 @@ const ChurchApp = {
             .filter(a => ['approved', 'published'].includes(a.status || 'published'))
             .filter(a => !a.groupId && (a.audience === 'all' || a.audience === scope))
             .slice(0, 5);
-        list.innerHTML = items.length ? items.map(a => {
+        // The card is a swipeable carousel of date-pill cards; "View all" drops
+        // the carousel and lists every announcement at once.
+        list.classList.toggle('is-empty', !items.length);
+        list.classList.toggle('is-expanded', !!showAll.announcements);
+        list.innerHTML = items.length ? items.map((a) => {
             const stamp = a.sentAt || a.approvedAt || a.createdAt || a.suggestedAt;
-            const when = stamp ? new Date(stamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+            const d = stamp ? new Date(stamp) : null;
+            const valid = d && !isNaN(d.getTime());
+            const pill = valid ? d.toLocaleDateString(undefined, { month: 'short' }) + ' ' + d.getDate() : '';
+            const postedBy = a.approvedBy
+                ? '<span class="mobile-ann-meta">Posted by ' + esc(a.approvedBy) + '</span>'
+                : '';
             return `
-                <div class="mobile-announcement-item">
-                    <strong>${esc(a.title)}</strong>
-                    <span>${esc(a.body)}</span>
-                    <span class="mobile-announcement-meta">${esc(when)}${a.approvedBy ? ' Â· Posted by ' + esc(a.approvedBy) : ''}</span>
-                </div>`;
-        }).join('') : '<p class="muted-italic" style="font-size:0.72rem;">No announcements yet.</p>';
+                <article class="mobile-ann-item">
+                    ${pill ? `<span class="mobile-ann-pill">${esc(pill)}</span>` : ''}
+                    <strong class="mobile-ann-title">${esc(a.title)}</strong>
+                    <p class="mobile-ann-body">${esc(a.body)}</p>
+                    ${postedBy}
+                    <span class="mobile-ann-go" aria-hidden="true"></span>
+                </article>`;
+        }).join('') : '<p class="mobile-empty">No announcements yet.</p>';
+
+        // Carousel dots mirror the snapped card so it is obvious how many
+        // announcements are queued behind the first one.
+        const dots = document.getElementById('mobile-ann-dots');
+        if (dots) {
+            dots.innerHTML = items.map((a, i) => `<button type="button" class="mobile-ann-dot${i === 0 ? ' is-active' : ''}" data-index="${i}" aria-label="Announcement ${i + 1}" onclick="ChurchApp.mobileShowAnnouncement(${i})"></button>`).join('');
+            dots.hidden = !!showAll.announcements || items.length < 2;
+        }
+        list.onscroll = () => {
+            if (showAll.announcements || items.length < 2 || !dots) return;
+            const idx = Math.round(list.scrollLeft / Math.max(1, list.clientWidth));
+            dots.querySelectorAll('.mobile-ann-dot').forEach((dot, i) => dot.classList.toggle('is-active', i === idx));
+        };
+
+        const btn = document.getElementById('mobile-ann-viewall');
+        if (btn) {
+            btn.hidden = items.length <= 1;
+            btn.innerHTML = showAll.announcements ? 'Show less' : 'View all &rarr;';
+        }
+    },
+
+    // Tapping a carousel dot slides the announcements card to that item.
+    mobileShowAnnouncement(index) {
+        const list = document.getElementById('mobile-announcements-list');
+        if (!list) return;
+        list.scrollTo({ left: list.clientWidth * index, behavior: 'smooth' });
     },
 
     submitAnnouncementSuggestion() {
@@ -6549,11 +7088,32 @@ const ChurchApp = {
         const inScope = (bId) => (!branchId || branchId === 'global') ? true : bId === branchId;
         const campaigns = (this.db.campaigns || []).filter(c => inScope(c.branchId) || (branchId === 'global'));
         const money = (n) => window.money(n, { decimals: 0 });
+        // Every card answers two questions, because an app account belongs to
+        // one person while a project is funded by the whole campus: what have I
+        // given to this project, and how is the campus doing on it overall.
+        const memberId = this.simulatedMemberId();
+        const scopeBranch = (this.db.branches || []).find(b => b.id === branchId);
+        const branchName = scopeBranch ? scopeBranch.name : 'Branch';
+        // The member app always offers the "support this project" form: giving
+        // to a project is the whole point of the tab. The reference was missing,
+        // which made every render of this tab throw.
+        const supportForm = true;
         list.innerHTML = campaigns.length ? campaigns.map((c) => {
-            const m = this.campaignMetrics(c, inScope);
+            const m = this.campaignMetrics(c, inScope, memberId);
             const arrow = m.trend.dir === 'up' ? '&#9650;' : m.trend.dir === 'down' ? '&#9660;' : '&#8226;';
             const trendCls = m.trend.dir === 'up' ? 'trend-up' : m.trend.dir === 'down' ? 'trend-down' : 'trend-flat';
             const funded = m.pct >= 100 ? '<span class="campaign-funded">Fully Funded</span>' : '';
+            const myPledge = m.myPledge || 0;
+            const myPaid = m.mine || 0;
+            const myLeft = Math.max(0, myPledge - myPaid);
+            const mineNote = myPledge > 0
+                ? (myLeft > 0
+                    ? 'You promised ' + money(myPledge) + ' - ' + money(myLeft) + ' of it still to give.'
+                    : 'Your pledge of ' + money(myPledge) + ' is fully given - thank you.')
+                : 'Pledge any amount on your side: other members are pledging to this project too.';
+            const pledgers = m.pledgeCount > 0
+                ? 'Pledged by ' + m.pledgeCount + (m.pledgeCount === 1 ? ' member' : ' members') + ' so far.'
+                : 'No pledges yet - be the first.';
             return `<div class="mobile-project-card">
                 <div class="mobile-project-top">
                     <strong>${esc(c.name)}</strong>
@@ -6562,8 +7122,31 @@ const ChurchApp = {
                 <div class="mobile-project-badges">${this.fundCategoryBadge(c.fundCategory, { pledged: m.goal, removed: m.raised, remaining: m.remaining })}${funded}</div>
                 <div class="campaign-bar mobile-project-bar"><div class="campaign-bar-fill" style="width:${m.pct}%;"></div></div>
                 ${this.campaignFiguresHtml(c, m, 'mobile-project-figures')}
+                <div class="mobile-project-mine">
+                    <div class="mobile-project-mine-cell">
+                        <span>My Pledge</span>
+                        <strong class="${myPledge > 0 ? 'is-mine' : ''}">${money(myPledge)}</strong>
+                    </div>
+                    <div class="mobile-project-mine-cell">
+                        <span>Given By Me</span>
+                        <strong>${money(myPaid)}</strong>
+                    </div>
+                    <div class="mobile-project-mine-cell">
+                        <span>${esc(branchName)} Pledged</span>
+                        <strong>${money(m.pledged)}</strong>
+                    </div>
+                    <div class="mobile-project-mine-cell">
+                        <span>${esc(branchName)} Received</span>
+                        <strong>${money(m.raised)}</strong>
+                    </div>
+                    <div class="mobile-project-mine-note">${esc(mineNote)}<br>${esc(pledgers)}</div>
+                </div>
+                <div class="mobile-project-pledge">
+                    <input type="number" id="proj-pledge-${esc(c.id)}" class="form-control" min="1" step="1" placeholder="Pledge amount (Ksh)" aria-label="Pledge amount">
+                    <button type="button" class="mobile-rsvp-btn" onclick="ChurchApp.pledgeToMobileProject('${esc(c.id)}')">Pledge</button>
+                </div>
                 <div class="mobile-project-foot">
-                    <span class="campaign-trend ${trendCls}">${arrow} ${esc(m.trend.label)}</span>
+                    ${this.isRealMemberOnPhone() ? '' : `<span class="campaign-trend ${trendCls}">${arrow} ${esc(m.trend.label)}</span>`}
                 </div>
             ${supportForm ? `<div class="mobile-project-support">
                 <input type="number" id="proj-amount-${esc(c.id)}" class="form-control" min="1" step="1" placeholder="Amount (Ksh)" aria-label="Support amount">
@@ -6573,7 +7156,7 @@ const ChurchApp = {
                     <option>Bank Transfer</option>
                     <option>Cash</option>
                 </select>
-                <button type="button" class="mobile-rsvp-btn" onclick="ChurchApp.supportProject('${esc(c.id)}')">Support this project</button>
+                <button type="button" class="mobile-rsvp-btn" onclick="ChurchApp.supportProject('${esc(c.id)}')">Give now</button>
             </div>` : ''}
             </div>`;
         }).join('') : '<div class="mobile-project-empty">No church projects posted yet - check back soon.</div>';
@@ -6594,13 +7177,26 @@ const ChurchApp = {
     },
 
     renderMobileHome() {
-        // Time-aware greeting for the simulated phone header.
+        const showAll = this.mobileHomeShowAll || (this.mobileHomeShowAll = { announcements: false, events: false });
+
+        // Greeting card: the small line is the time of day, the big line is the
+        // member's first name, and the church tagline from Settings sits below.
         const greetingEl = document.getElementById('mobile-greeting');
         if (greetingEl) {
             const hour = new Date().getHours();
-            const part = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-            const name = this.mobileGreetingName();
-            greetingEl.textContent = name ? `${part}, ${name}!` : `${part}!`;
+            greetingEl.textContent = hour < 12 ? 'Good morning,' : hour < 17 ? 'Good afternoon,' : 'Good evening,';
+        }
+        const name = this.mobileGreetingName();
+        const welcomeEl = document.getElementById('mobile-welcome');
+        if (welcomeEl) welcomeEl.textContent = name ? `${name}!` : 'Welcome!';
+        const taglineEl = document.getElementById('mobile-tagline');
+        if (taglineEl) taglineEl.textContent = (this.church && this.church.tagline) || 'Together in Faith, Stronger in Love';
+        // The header avatar is a member glyph, so the name is surfaced as a
+        // tooltip and to screen readers instead of as initials.
+        const avatarEl = document.getElementById('mobile-avatar');
+        if (avatarEl) {
+            const who = this.mobileMemberDisplayName();
+            avatarEl.title = who ? who + ' - your profile' : 'Your profile';
         }
 
         // News bullet ticker - the super admin edits this in Settings.
@@ -6610,9 +7206,13 @@ const ChurchApp = {
             if (textEl) textEl.textContent = this.churchContactInfo().newsBullet || 'Welcome to our church family!';
         }
 
-        const welcomeEl = document.getElementById('mobile-welcome');
-        if (welcomeEl) {
-            welcomeEl.textContent = 'Welcome to Church Connect';
+        // The announcements card doubles as the bell's target, so badge the
+        // bell with how many announcements are waiting to be read.
+        const bellCount = document.getElementById('mobile-bell-count');
+        if (bellCount) {
+            const unread = (this.db.announcements || []).length;
+            bellCount.textContent = unread > 9 ? '9+' : String(unread);
+            bellCount.hidden = !unread;
         }
 
         const eventsContainer = document.getElementById('mobile-upcoming-events');
@@ -6644,7 +7244,9 @@ const ChurchApp = {
         // member of one branch must never see another branch's events.
         const phoneBranch = this.mobileMemberBranchId();
         const branchEvents = (this.db.events || []).filter(e => e.branchId === phoneBranch);
-        branchEvents.forEach((e, idx) => {
+        // Home previews the next two services; "View all" expands the rest.
+        const visibleEvents = showAll.events ? branchEvents : branchEvents.slice(0, 2);
+        visibleEvents.forEach((e, idx) => {
             const div = document.createElement('div');
             div.className = 'mobile-event-card';
             const rsvped = (e.rsvpMemberIds || []).includes(this.simulatedMemberId());
@@ -6661,18 +7263,24 @@ const ChurchApp = {
                 </div>
                 <div class="mobile-event-info">
                     <strong class="mobile-event-title">${esc(e.title)}</strong>
-                    <span class="mobile-event-loc">${esc(branchName(e.branchId))}</span>
-                    <span class="mobile-event-going">${(e.rsvpMemberIds || []).length} going</span>
+                    <span class="mobile-event-loc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6.4-5.6 6.4-10.4A6.4 6.4 0 0 0 5.6 10.6C5.6 15.4 12 21 12 21z"/><circle cx="12" cy="10.4" r="2.3"/></svg> ${esc(branchName(e.branchId))}</span>
+                    <span class="mobile-event-going"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.6" r="3.1"/><path d="M3.2 19c0-2.9 2.4-4.7 5.8-4.7S14.8 16.1 14.8 19"/><path d="M16.2 5.9a3.1 3.1 0 0 1 0 5.4"/></svg> ${(e.rsvpMemberIds || []).length} going</span>
                     <div class="mobile-event-bottom">
                         <span class="mobile-event-time"><svg class="inline-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> ${esc(fmtTime(e.time))}</span>
                         <button class="mobile-rsvp-btn${rsvped ? ' is-rsvped' : ''}" ${rsvped ? 'disabled' : ''} onclick="ChurchApp.handleMobileRSVP('${esc(e.id)}')">${rsvped ? 'Going' : 'RSVP'}</button>
                     </div>
+                    <span class="mobile-event-go" aria-hidden="true"></span>
                 </div>
             `;
             eventsContainer.appendChild(div);
         });
         if (!branchEvents.length) {
-            eventsContainer.innerHTML = '<p class="muted-italic" style="font-size:0.72rem; margin:4px 0;">No upcoming events at your campus yet.</p>';
+            eventsContainer.innerHTML = '<p class="mobile-empty">No upcoming events at your campus yet.</p>';
+        }
+        const eventsBtn = document.getElementById('mobile-events-viewall');
+        if (eventsBtn) {
+            eventsBtn.hidden = branchEvents.length <= 2;
+            eventsBtn.innerHTML = showAll.events ? 'Show less' : 'View all &rarr;';
         }
 
         // Recent approved prayer requests (shown when "View all" is tapped).
@@ -6693,6 +7301,8 @@ const ChurchApp = {
         this.renderMobileGroups();
         this.renderMobileFamily();
         this.renderMobileAnnouncements();
+        // Give members the chance to install the Church Connect app.
+        this.maybeInjectInstallChip();
     },
 
     // Quick-action tiles on the member home: "Events" and "Groups" scroll to
@@ -6706,6 +7316,36 @@ const ChurchApp = {
         const targetId = action === 'events' ? 'mobile-events-head' : 'mobile-groups-head';
         requestAnimationFrame(() => {
             const el = document.getElementById(targetId);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    },
+
+    // Full name of whoever the phone is showing: the simulated member when an
+    // admin is previewing, otherwise the signed-in user.
+    mobileMemberDisplayName() {
+        const u = this.session.currentUser;
+        if (!(u && u.role === 'member')) {
+            const sim = this.simulatedMember();
+            const simName = (sim && (sim.name || sim.firstName)) || '';
+            if (simName) return String(simName).trim();
+        }
+        return String((u && (u.name || u.fullName)) || '').trim();
+    },
+
+    // The two "View all" links on the member home expand their section in place.
+    toggleMobileHomeSection(which) {
+        const state = this.mobileHomeShowAll || (this.mobileHomeShowAll = { announcements: false, events: false });
+        if (!(which in state)) return;
+        state[which] = !state[which];
+        if (which === 'announcements') this.renderMobileAnnouncements();
+        else this.renderMobileHome();
+    },
+
+    // The bell in the app header jumps to the announcements card.
+    mobileOpenAnnouncements() {
+        if (this.session.simulatedMobileView !== 'home') this.switchMobileView('home');
+        requestAnimationFrame(() => {
+            const el = document.getElementById('mobile-announcements-card');
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     },
@@ -7012,50 +7652,47 @@ const ChurchApp = {
         if (playerContainer) { playerContainer.style.display = 'none'; playerContainer.innerHTML = ''; }
 
         const isAdmin = ['hq_admin', 'branch_admin', 'platform_admin', 'ministry_leader'].includes(this.session.currentRole);
-        const sourceUrl = this.churchContactInfo().youtubeChannel || '';
-        const info = this._sermonSourceInfo(sourceUrl);
         const brand = window.MMC_BRAND || {};
         const churchName = (this.church && this.church.name) || brand.name || 'Church';
-        const hasSource = info.provider !== 'none';
-        const sourceLabel = info.provider === 'youtube'
-            ? (info.type === 'video' ? 'YouTube sermon link' : 'YouTube channel')
-            : info.provider === 'facebook'
-                ? (info.type === 'video' ? 'Facebook sermon link' : 'Facebook page')
-                : info.provider === 'vimeo' ? 'Vimeo sermon link'
-                : info.provider === 'media' ? 'Video link' : 'Sermon link';
+        const sources = this._sermonSources();
+        const summary = sources.map((s) => s.label).join(' + ');
 
         container.innerHTML = `
             <div class="yt-channel-banner">
                 <div class="yt-avatar">${esc(this._initials(churchName))}</div>
                 <div class="yt-channel-meta">
                     <strong class="yt-channel-name">${esc(churchName)}</strong>
-                    <span class="yt-channel-sub">Sermons${hasSource ? ' &middot; ' + sourceLabel : ''}</span>
+                    <span class="yt-channel-sub">Sermons${summary ? ' &middot; ' + esc(summary) : ''}</span>
                 </div>
                 <div class="yt-channel-actions" id="yt-channel-actions">
-                    ${isAdmin ? `<button type="button" class="yt-link-btn" onclick="ChurchApp.promptSermonSource()">${hasSource ? 'Change' : 'Link'}</button>` : ''}
+                    ${isAdmin ? `<button type="button" class="yt-link-btn" onclick="ChurchApp.openSermonLinkSettings()">${sources.length ? 'Manage links' : 'Add links'}</button>` : ''}
                 </div>
             </div>
-            <div class="yt-feed-status" id="yt-feed-status">Loading latest services&hellip;</div>
+            <div class="yt-feed-status" id="yt-feed-status"></div>
             <div class="yt-feed" id="yt-feed-list"></div>
+            <div class="yt-feed" id="yt-source-list"></div>
         `;
         const status = document.getElementById('yt-feed-status');
         const list = document.getElementById('yt-feed-list');
-        if (!list) return;
+        const sourceList = document.getElementById('yt-source-list');
+        if (!list || !sourceList) return;
 
-        if (!hasSource) {
+        if (!sources.length) {
             if (status) status.innerHTML = isAdmin
-                ? 'No sermon source linked yet. Tap "Link" to add your YouTube channel, a Facebook page or video, or any other sermon link.'
-                : 'No sermon source linked yet.';
+                ? 'No sermon channel linked yet. Tap "Add links" to add your YouTube channel, Facebook page, TikTok profile or any other sermon link.'
+                : 'No sermon channel linked yet.';
             this._renderLocalSermonFallback(list);
             return;
         }
+        if (status) status.style.display = 'none';
+        this._renderSermonSources(sourceList, sources, churchName);
 
         // YouTube channel/handle/URL -> live feed of the program uploads.
-        if (info.provider === 'youtube' && info.type === 'channel') {
-            this._loadYoutubeFeed(sourceUrl).then((feed) => {
-                if (!status || !list) return;
+        const ytFeed = sources.find((s) => s.kind === 'youtube' && s.info.type === 'channel');
+        if (ytFeed) {
+            this._loadYoutubeFeed(ytFeed.link).then((feed) => {
+                if (!list) return;
                 if (!feed || !feed.videos || !feed.videos.length) throw new Error('empty feed');
-                status.style.display = 'none';
                 list.innerHTML = feed.videos.map((v) => this._ytVideoCard(v)).join('');
                 list.querySelectorAll('.yt-video-card').forEach((card) => {
                     card.addEventListener('click', () => this.playYoutubeVideo(card.dataset.videoId, card.dataset.title));
@@ -7069,72 +7706,94 @@ const ChurchApp = {
                     watchBtn.onclick = () => this.playYoutubeChannel(feed.channel.id);
                     actions.insertBefore(watchBtn, actions.firstChild);
                 }
-                this._appendSermonArchive(list);
             }).catch(() => {
-                if (status) status.innerHTML = 'Could not load the live feed right now - showing saved sermons.';
-                this._renderLocalSermonFallback(list);
+                list.innerHTML = '<div class="yt-source-note">Could not load the live YouTube feed right now - the linked channels below still work.</div>';
             });
-            return;
         }
 
-        // A single linked program (YouTube video, Facebook video/page, Vimeo,
-        // direct video file or any other external link). Saved sermons stay
-        // listed below as the "previous sermons" backlog.
-        if (status) status.style.display = 'none';
-        if (info.provider === 'youtube' && info.type === 'video') {
-            list.innerHTML = this._ytVideoCard({ videoId: info.videoId, title: 'Linked sermon', published: '', channelName: churchName });
-            const card = list.querySelector('.yt-video-card');
-            if (card) card.addEventListener('click', () => this.playYoutubeVideo(info.videoId, 'Linked sermon'));
-        } else if (info.provider === 'facebook' && info.type === 'video') {
-            list.innerHTML = this._facebookSourceCard(info, churchName);
-            const card = list.querySelector('.yt-source-card');
-            if (card) card.addEventListener('click', () => this._playSermonSource(info, 'Linked Facebook sermon'));
-        } else if (info.provider === 'facebook') {
-            list.innerHTML = this._facebookPageCard(info, churchName);
-        } else {
-            list.innerHTML = this._externalSourceCard(info, churchName);
-            const card = list.querySelector('.yt-source-card');
-            const embeddable = info.provider === 'vimeo' || info.provider === 'media';
-            if (card && embeddable) card.addEventListener('click', () => this._playSermonSource(info, 'Linked sermon'));
-        }
-        this._appendSermonArchive(list);
+        // Saved services stay at the bottom as the "previous sermons" backlog.
+        this._appendSermonArchive(sourceList);
     },
 
-    // Open a small prompt so the church (admin) can link its sermon source: a
-    // YouTube channel/video, a Facebook page/video, Vimeo or any other program
-    // link. Works in demo mode (localStorage override) and live mode (church
-    // record).
+    // Every sermon channel the admin linked in Settings -> Church Profile, in
+    // the order they appear in the member app's Sermons tab. Each entry pairs
+    // the raw link with its classified provider.
+    _sermonSources() {
+        const contact = this.churchContactInfo();
+        const links = [contact.youtubeChannel, contact.facebookUrl, contact.tiktokUrl];
+        const labels = {
+            youtube: 'YouTube', facebook: 'Facebook', tiktok: 'TikTok',
+            vimeo: 'Vimeo', media: 'Video', generic: 'Sermon link',
+        };
+        const out = [];
+        links.forEach((link) => {
+            const info = this._sermonSourceInfo(link || '');
+            if (info.provider === 'none') return;
+            // Label by what the link actually is, so a Vimeo or other link
+            // pasted into the YouTube field is never mislabelled.
+            out.push({ link, label: labels[info.provider] || 'Sermon link', kind: info.provider, info });
+        });
+        return out;
+    },
+
+    // One block per linked channel. Anything the app can play itself becomes a
+    // tappable card; everything else becomes a card plus an "open" link.
+    _renderSermonSources(listEl, sources, churchName) {
+        if (!listEl) return;
+        listEl.innerHTML = '';
+        sources.forEach((s) => {
+            // A YouTube channel is already shown above as the live upload feed.
+            if (s.kind === 'youtube' && s.info.type === 'channel') return;
+            const block = document.createElement('div');
+            block.className = 'yt-source-block';
+            let play = null;
+            if (s.kind === 'youtube') {
+                block.innerHTML = this._ytVideoCard({ videoId: s.info.videoId, title: 'Linked sermon', published: '', channelName: churchName });
+                play = () => this.playYoutubeVideo(s.info.videoId, 'Linked sermon');
+            } else if (s.kind === 'facebook' && s.info.type === 'video') {
+                block.innerHTML = this._facebookSourceCard(s.info, churchName);
+                play = () => this._playSermonSource(s.info, 'Linked Facebook sermon');
+            } else if (s.kind === 'facebook') {
+                block.innerHTML = this._facebookPageCard(s.info, churchName);
+            } else if (s.kind === 'tiktok') {
+                block.innerHTML = this._tiktokCard(s.info, churchName);
+            } else {
+                block.innerHTML = this._externalSourceCard(s.info, churchName);
+                if (s.kind === 'vimeo' || s.kind === 'media') play = () => this._playSermonSource(s.info, 'Linked sermon');
+            }
+            listEl.appendChild(block);
+            const card = block.querySelector('.yt-video-card, .yt-source-card');
+            if (!card || !play) return;
+            card.addEventListener('click', play);
+            card.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); play(); }
+            });
+        });
+    },
+
+    // Admins manage the sermon channels in Settings -> Church Profile, so the
+    // button in the Sermons tab takes them straight to that form.
+    openSermonLinkSettings() {
+        this.session.activeTab = 'admin_settings';
+        this.renderAll();
+        const target = document.getElementById('church-youtube-input');
+        if (target) {
+            if (target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.focus({ preventScroll: true });
+        }
+        this.toast('Add your YouTube, Facebook and TikTok links, then tap Save Church Profile.');
+    },
+
+    // Linking a sermon channel now happens in Settings -> Church Profile, where
+    // the admin gets a proper labelled field per channel. Kept under its old
+    // name so any stale cached page still lands somewhere useful.
     promptSermonSource() {
-        const current = this.churchContactInfo().youtubeChannel || '';
-        const url = window.prompt('Paste the sermon source link (YouTube channel or video, Facebook page or video, Vimeo, or any other program link):', current);
-        if (url === null) return;
-        const trimmed = String(url).trim();
-        if (!trimmed) return;
-        const looksLikeLink = /^@[A-Za-z0-9_.-]+$/.test(trimmed)
-            || /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
-            || /^[a-z0-9-]+(\.[a-z0-9-]+)+([:/?#]|$)/i.test(trimmed);
-        if (!looksLikeLink) {
-            this.toast('That does not look like a link. Paste a YouTube/Facebook/Vimeo link or a channel handle like @YourChurch.', 'error');
-            return;
-        }
-        try { localStorage.setItem('church2_youtube_channel', trimmed); } catch (e) { /* private mode */ }
-        const church = this.church || (Array.isArray(this.db.churches) && this.db.churches[0]);
-        if (church) church.youtubeChannel = trimmed;
-        if (this.apiEnabled() && church && window.Church2API) {
-            this.apiWrite(() => Church2API.updateChurch(church.id, { youtubeChannel: trimmed }), () => {});
-        }
-        const provider = this._sermonSourceInfo(trimmed).provider;
-        const label = provider === 'youtube' ? 'YouTube'
-            : provider === 'facebook' ? 'Facebook'
-            : provider === 'vimeo' ? 'Vimeo'
-            : provider === 'media' ? 'video' : 'sermon';
-        this.toast(label + ' sermon source linked.');
-        this.renderMobileSermons();
+        return this.openSermonLinkSettings();
     },
 
     // Backwards-compatible alias kept for any older inline callers.
     promptYoutubeChannel() {
-        return this.promptSermonSource();
+        return this.openSermonLinkSettings();
     },
 
     async _loadYoutubeFeed(channelUrl) {
@@ -7237,6 +7896,12 @@ const ChurchApp = {
             return { provider: 'facebook', type: 'page', url: withScheme };
         }
 
+        // TikTok cannot be embedded, so a profile or clip is always shown as a
+        // card that opens the app.
+        if (/tiktok\.com|vm\.tiktok\.com/.test(lower)) {
+            return { provider: 'tiktok', type: /\/video\//.test(lower) ? 'video' : 'page', url: withScheme };
+        }
+
         m = /vimeo\.com\/(\d+)/.exec(withScheme);
         if (m) return { provider: 'vimeo', type: 'video', videoId: m[1], url: withScheme };
 
@@ -7274,6 +7939,25 @@ const ChurchApp = {
             </div>
             <div class="yt-source-note">Facebook does not allow other apps to list a page&rsquo;s videos automatically, so this opens the page&rsquo;s video library where every program (and past ones) is available.</div>
             <a class="yt-open-link" href="${esc(videosUrl)}" target="_blank" rel="noopener">Open all sermons on Facebook</a>`;
+    },
+
+    _tiktokCard(info, churchName) {
+        const handle = (info.url.match(/tiktok\.com\/@([A-Za-z0-9_.]+)/) || [])[1] || '';
+        const title = info.type === 'video'
+            ? 'Sermon clip on TikTok'
+            : (handle ? '@' + handle + ' on TikTok' : 'Sermon clips on TikTok');
+        return `
+            <div class="yt-video-card">
+                <div class="yt-thumb" style="display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#111827,#0f172a);">
+                    <span style="font-size:1.4rem; color:#fff;">&#9834;</span>
+                </div>
+                <div class="yt-video-meta">
+                    <strong class="yt-video-title">${esc(title)}</strong>
+                    <span class="yt-video-sub">${esc(churchName)} &middot; opens in the TikTok app</span>
+                </div>
+            </div>
+            <div class="yt-source-note">TikTok clips cannot play inside the app, so this opens your TikTok profile where members can follow along.</div>
+            <a class="yt-open-link" href="${esc(info.url)}" target="_blank" rel="noopener">Open on TikTok</a>`;
     },
 
     _externalSourceCard(info, churchName) {
@@ -7946,6 +8630,26 @@ const ChurchApp = {
         });
         if (realMember || lockBranch) select.setAttribute('disabled', 'true');
         else select.removeAttribute('disabled');
+        // The campus was fixed at registration, so a member never gets a picker
+        // to change it: swap the dropdown for locked text. An admin previewing
+        // the phone keeps the picker so they can inspect any campus.
+        const givingBranchLabel = document.getElementById('mobile-giving-branch-label');
+        const givingBranchLocked = document.getElementById('mobile-giving-branch-locked');
+        const lockedBranchName = (this.db.branches.find(b => b.id === (lockBranch || select.value)) || {}).name || '';
+        if (realMember) {
+            if (givingBranchLocked) {
+                givingBranchLocked.hidden = false;
+                givingBranchLocked.textContent = lockedBranchName
+                    ? `Locked to ${lockedBranchName} - the campus you chose when you registered.`
+                    : 'Locked to the campus you chose when you registered.';
+            }
+            if (givingBranchLabel) givingBranchLabel.hidden = true;
+            select.hidden = true;
+        } else {
+            if (givingBranchLocked) givingBranchLocked.hidden = true;
+            if (givingBranchLabel) givingBranchLabel.hidden = false;
+            select.hidden = false;
+        }
         const keepStored = !realMember || !memberBranch || prevBranch === memberBranch;
         const preferred = (keepStored && prevBranch && [...select.options].some(o => o.value === prevBranch))
             ? prevBranch
@@ -8071,12 +8775,71 @@ const ChurchApp = {
         const categorySel = document.getElementById('mobile-giving-category');
         const category = categorySel ? categorySel.value : '';
         if (category === 'Pledge') {
-            noteEl.textContent = 'Pledge Payment: money you promised earlier and are now actually giving. It reduces your pledge balance shown above - only this amount counts as given now.';
+            const member = this.db.members.find(m => m.id === this.simulatedMemberId());
+            const pledged = member && member.pledgeCampaignId
+                ? (this.db.campaigns || []).find(c => c.id === member.pledgeCampaignId)
+                : null;
+            noteEl.textContent = pledged
+                ? `Pledge Payment for ${pledged.name}: money you promised and are now actually giving. It reduces your pledge balance shown above - only this amount counts as given now.`
+                : 'Pledge Payment: money you promised earlier and are now actually giving. It reduces your pledge balance shown above - only this amount counts as given now.';
         } else if (category.indexOf('campaign:') === 0) {
             noteEl.textContent = 'Project gift: this money is given now to the project you chose above.';
         } else {
             noteEl.textContent = 'Gift: this money is given now. A pledge is different - it is money you promise to give later, before you have actually given it.';
         }
+    },
+
+    // Record a promise of `amount` to a project (campaign null = a general
+    // pledge with no project). A pledge only ever adds: a member may pledge to
+    // several projects and may top up the same one later.
+    addMemberPledge(member, campaign, amount) {
+        const list = (Array.isArray(member.pledges) ? member.pledges : []).map(p => ({ ...p }));
+        const id = campaign ? campaign.id : null;
+        const hit = list.find(p => (p.campaignId || null) === id);
+        if (hit) hit.amount = (parseFloat(hit.amount) || 0) + amount;
+        else list.push({ campaignId: id, amount });
+        member.pledges = list;
+        return this.saveMemberPledges(member);
+    },
+
+    // Save a member's pledge list. The list is the source of truth, and the
+    // member's total promise is kept in step with it so every existing total in
+    // the console still adds up. Written locally and to the server.
+    saveMemberPledges(member) {
+        const list = (Array.isArray(member.pledges) ? member.pledges : [])
+            .filter(p => p && (parseFloat(p.amount) || 0) > 0)
+            .map(p => ({ campaignId: p.campaignId || null, amount: parseFloat(p.amount) || 0 }));
+        member.pledges = list;
+        const total = list.reduce((s, p) => s + p.amount, 0);
+        member.pledgeAmount = total > 0 ? total : null;
+        const withProject = list.filter(p => p.campaignId);
+        member.pledgeCampaignId = withProject.length ? withProject[withProject.length - 1].campaignId : null;
+        this.saveDB();
+        this.apiWrite(
+            () => Church2API.updateMember(member.id, {
+                pledges: list,
+                pledgeAmount: member.pledgeAmount == null ? null : member.pledgeAmount,
+                pledgeCampaignId: member.pledgeCampaignId,
+            }),
+            (srv) => {
+                if (!srv) return;
+                if (Array.isArray(srv.pledges)) member.pledges = srv.pledges;
+                if (srv.pledgeAmount !== undefined) member.pledgeAmount = srv.pledgeAmount;
+                if (srv.pledgeCampaignId !== undefined) member.pledgeCampaignId = srv.pledgeCampaignId;
+                // The project's communal totals are the server's to add up, and
+                // this member's promise has only just landed - so re-pull them.
+                this.refreshCampaignTotals();
+            }
+        );
+        return { total, list };
+    },
+
+    // Projects a member may pledge to or give to: the campaigns of their own
+    // campus. Both pickers in the Give tab use this so they always agree.
+    pledgeableCampaigns(member) {
+        const branchId = (member && member.branchId) || this.mobileMemberBranchId();
+        const inScope = (bId) => (!branchId || branchId === 'global' || branchId === 'all') ? true : bId === branchId;
+        return (this.db.campaigns || []).filter(c => inScope(c.branchId));
     },
 
     // "Contribute to My Pledge" in the Give tab: the member records the amount
@@ -8095,13 +8858,49 @@ const ChurchApp = {
         const state = document.getElementById('mobile-pledge-state');
         if (state) state.textContent = pledge.balance <= 0 ? 'Fully paid' : `Balance: ${money(pledge.balance)}`;
 
-        // Project picker: pledge campaigns the payment can be earmarked to.
+        // The project this member's pledge is for. The member chooses it in the
+        // "Make a Pledge" card, so the promise and the payment agree on it.
+        const camps = this.pledgeableCampaigns(member);
+        const pledgedProject = member && member.pledgeCampaignId
+            ? (camps.find(c => c.id === member.pledgeCampaignId) || (this.db.campaigns || []).find(c => c.id === member.pledgeCampaignId) || null)
+            : null;
+        // Every project this member is pledging to, with their own promise on
+        // each. A member may be contributing to more than one project.
+        const myPledgeParts = (Array.isArray(member && member.pledges) ? member.pledges : [])
+            .filter(p => p && (parseFloat(p.amount) || 0) > 0)
+            .map(p => {
+                const camp = p.campaignId ? (this.db.campaigns || []).find(c => c.id === p.campaignId) : null;
+                return `${camp ? camp.name : 'General'}: ${money(p.amount)}`;
+            });
+        const forEl = document.getElementById('mobile-pledge-for');
+        if (forEl) forEl.textContent = myPledgeParts.length ? 'You are pledging - ' + myPledgeParts.join(' · ') : '';
+        const projectOptions = camps.map(c => `<option value="${esc(c.id)}">${esc(c.name)}${String(c.fundCategory || '').toLowerCase() === 'pledge' ? ' (Pledge)' : ''}</option>`).join('');
+
+        // "Make a Pledge" card: pick the project the promise is for, then the
+        // amount promised. Nothing is taken from the member here - a pledge is
+        // a promise, and only a payment counts as money given.
+        const newSel = document.getElementById('mobile-newpledge-project');
+        if (newSel) {
+            const wanted = (member && member.pledgeCampaignId) || newSel.value;
+            newSel.innerHTML = '<option value="">General Pledge (no project)</option>' + projectOptions;
+            if (wanted && [...newSel.options].some(o => o.value === wanted)) newSel.value = wanted;
+        }
+        const newState = document.getElementById('mobile-newpledge-state');
+        if (newState) newState.textContent = pledge.amount > 0 ? `${money(pledge.amount)} pledged` : 'No pledge yet';
+        const newHint = document.getElementById('mobile-newpledge-hint');
+        if (newHint) {
+            newHint.textContent = myPledgeParts.length
+                ? `You have promised ${money(pledge.amount)} in total and given ${money(pledge.paid)} so far. A new pledge is added on top of this.`
+                : 'Choose which project you are pledging to, then the amount you are promising. Nothing is paid yet - the promise counts toward that project straight away.';
+        }
+
+        // Project picker for the payment itself: which project this
+        // contribution is earmarked to. Defaults to the pledged project.
         const projectSel = document.getElementById('mobile-pledge-project');
         if (projectSel) {
-            const branchId = member ? member.branchId : this.session.currentBranch;
-            const inScope = (bId) => (!branchId || branchId === 'global' || branchId === 'all') ? true : bId === branchId;
-            const allCamps = (this.db.campaigns || []).filter(c => inScope(c.branchId));
-            projectSel.innerHTML = '<option value="">General Pledge</option>' + allCamps.map(c => `<option value="${esc(c.id)}">${esc(c.name)}${String(c.fundCategory || '').toLowerCase() === 'pledge' ? ' (Pledge)' : ''}</option>`).join('');
+            const wanted = (member && member.pledgeCampaignId) || projectSel.value;
+            projectSel.innerHTML = '<option value="">General Pledge</option>' + projectOptions;
+            if (wanted && [...projectSel.options].some(o => o.value === wanted)) projectSel.value = wanted;
         }
 
         const submitBtn = document.getElementById('mobile-pledge-submit');
@@ -8109,10 +8908,10 @@ const ChurchApp = {
         const hint = document.getElementById('mobile-pledge-hint');
         if (hint) {
             hint.textContent = pledge.balance <= 0
-                ? 'This pledge is fully paid - thank you!'
+                ? (pledge.amount > 0 ? 'This pledge is fully paid - thank you!' : 'No pledge recorded for you yet - make one in the "Make a Pledge" card above.')
                 : (pledge.amount <= 0
-                    ? 'No pledge recorded for you yet - ask the church office to set one up.'
-                    : 'Each contribution reduces your remaining balance until the pledge is fully paid.');
+                    ? 'No pledge recorded for you yet - make one in the "Make a Pledge" card above.'
+                    : `Each contribution reduces your remaining balance until the pledge is fully paid${pledgedProject ? ` (${pledgedProject.name})` : ''}.`);
         }
 
         const amountInput = document.getElementById('mobile-pledge-amount-input');
@@ -8124,6 +8923,34 @@ const ChurchApp = {
                 else hint.textContent = `Remaining after this contribution: ${money(pledge.balance - entered)}.`;
             }
         };
+    },
+
+    // Record the member's own pledge, together with the project it is for. A
+    // pledge is a promise, so no money moves: the promise and its project are
+    // saved on the member record (locally and on the server), and the Give tab
+    // then pays it down through "Contribute to My Pledge".
+    submitMobileNewPledge() {
+        const member = this.db.members.find(m => m.id === this.simulatedMemberId());
+        if (!member) { this.toast('Sign in as a member to record a pledge.', 'error'); return; }
+        const amountInput = document.getElementById('mobile-newpledge-amount');
+        const amount = parseFloat(amountInput ? amountInput.value : '') || 0;
+        if (!(amount > 0)) { this.toast('Enter the amount you are promising to give.', 'error'); return; }
+        const projectSel = document.getElementById('mobile-newpledge-project');
+        const campaignId = projectSel && projectSel.value ? projectSel.value : null;
+        const campaign = campaignId ? (this.db.campaigns || []).find(c => c.id === campaignId) : null;
+        // A pledge is a promise, so it adds to whatever is already promised to
+        // that project - it is never replaced by the next one.
+        const wasNewPledge = campaign ? this.memberPledgeTo(member, campaign) <= 0 : false;
+        this.addMemberPledge(member, campaign, amount);
+        this.bumpCampaignPledge(campaign, amount, wasNewPledge);
+        if (amountInput) amountInput.value = '';
+        const nowPledged = this.memberPledgeTo(member, campaign);
+        this.toast(campaign
+            ? `Pledged ${window.money(amount, { decimals: 0 })} to ${campaign.name}. Your promise for it is now ${window.money(nowPledged, { decimals: 0 })} - it counts toward the project straight away.`
+            : `General pledge of ${window.money(amount, { decimals: 0 })} recorded - not tied to a project.`);
+        this.renderMobilePledgePanel();
+        this.updateMobileGivingNote();
+        this.renderMobileProjects();
     },
 
     // Record the member's pledge contribution and reduce the pledge balance.
@@ -8200,13 +9027,10 @@ const ChurchApp = {
 
         // Pledge balance still remaining for the selected branch.
         const pledgeCampaigns = (this.db.campaigns || []).filter(c => inScope(c.branchId) && String(c.fundCategory || '').toLowerCase() === 'pledge');
-        const pledgePledged = pledgeCampaigns.reduce((s, c) => s + (parseFloat(c.goal) || 0), 0);
-        const pledgePaid = pledgeCampaigns.reduce((s, c) => {
-            const raised = (parseFloat(c.raisedOffset) || 0) + this.db.transactions
-                .filter(t => (t.campaignId ? t.campaignId === c.id : t.category === c.fundCategory) && inScope(t.branchId))
-                .reduce((s2, t) => s2 + (parseFloat(t.amount) || 0), 0);
-            return s + raised;
-        }, 0);
+        // What the campus promised (the same communal pledge figure the project
+        // cards show) measured against what has actually been received for it.
+        const pledgePledged = pledgeCampaigns.reduce((s, c) => s + this.campaignMetrics(c, inScope).pledged, 0);
+        const pledgePaid = pledgeCampaigns.reduce((s, c) => s + this.campaignMetrics(c, inScope).raised, 0);
         const branchRemaining = Math.max(0, pledgePledged - pledgePaid);
 
         // What this account owner has contributed in the selected branch.
@@ -8225,14 +9049,23 @@ const ChurchApp = {
             <div class="stat-value">${value}</div>
         </div>`;
 
+        // A member's account shows the member's own figures. The campus totals
+        // and the campus pledge balance are staff figures, so they stay in the
+        // console instead of being mixed into John's app.
+        const ownOnly = this.isRealMemberOnPhone();
+        const heading = ownOnly ? 'My Giving' : 'Financial Summary';
+        const cards = ownOnly
+            ? card('My Total Given', money(myTotal)) +
+              card('Number of Gifts', String(myTx.length)) +
+              card('My Pledge Remaining', money(myPledge.balance))
+            : card('Total Contribution', money(branchTotal)) +
+              card('Balance Remaining', money(branchRemaining)) +
+              card('My Contribution', money(myTotal)) +
+              card('My Pledge Remaining', money(myPledge.balance));
+
         el.innerHTML = `
-            <div class="giving-insights-head mobile-fin-summary-head"><span style="font-family: var(--font-header); font-weight:700; color:var(--text-primary);">Financial Summary &middot; ${esc(branchLabel)}</span></div>
-            <div class="mobile-fin-summary-grid">
-                ${card('Total Contribution', money(branchTotal))}
-                ${card('Balance Remaining', money(branchRemaining))}
-                ${card('My Contribution', money(myTotal))}
-                ${card('My Pledge Remaining', money(myPledge.balance))}
-            </div>`;
+            <div class="giving-insights-head mobile-fin-summary-head"><span style="font-family: var(--font-header); font-weight:700; color:var(--text-primary);">${esc(heading)} &middot; ${esc(branchLabel)}</span></div>
+            <div class="mobile-fin-summary-grid">${cards}</div>`;
     },
 
     // Web-style contribution ledger inside the Give tab, matching the
@@ -8242,10 +9075,18 @@ const ChurchApp = {
         if (!tbody) return;
         branchId = branchId || this.session.currentBranch;
         const inScope = (bId) => (!branchId || branchId === 'all' || branchId === 'global') ? true : bId === branchId;
+        // A member sees only their own gifts here. The server already narrows
+        // the feed to this account; the filter keeps that true in demo mode too.
+        const ownOnly = this.isRealMemberOnPhone();
+        const myMemberId = this.simulatedMemberId();
         const tx = (this.db.transactions || [])
-            .filter(t => inScope(t.branchId))
+            .filter(t => inScope(t.branchId) && (!ownOnly || t.memberId === myMemberId))
             .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
         const money = (n) => window.money(n, { decimals: 0 });
+        const ledgerTitle = document.getElementById('mobile-ledger-title');
+        if (ledgerTitle) ledgerTitle.textContent = ownOnly ? 'My Giving History' : 'Contribution Ledger';
+        const ledgerSub = document.getElementById('mobile-ledger-sub');
+        if (ledgerSub) ledgerSub.textContent = ownOnly ? 'Every gift you have given' : 'Recent gifts, web format';
         tbody.innerHTML = tx.slice(0, 8).map(t => `
             <tr>
                 <td><span class="receipt-no" style="font-family:monospace; font-weight:bold;">${esc(t.receiptNumber)}</span></td>
@@ -8300,6 +9141,36 @@ const ChurchApp = {
         }).join('') : '<div class="mobile-project-empty">No transactions yet - your giving history will appear here.</div>';
     },
 
+    // Move a project's communal numbers the instant a member presses Pledge,
+    // instead of making them wait for a server round-trip. Only the
+    // server-authored view carries communal totals (c.pledged); in the offline
+    // demo dataset those totals are summed from the member rows, which already
+    // include this pledge, so there is nothing to bump.
+    bumpCampaignPledge(campaign, amount, wasNewPledge) {
+        if (!campaign || campaign.pledged == null) return;
+        campaign.pledged = (parseFloat(campaign.pledged) || 0) + amount;
+        if (wasNewPledge) campaign.pledgeCount = (parseInt(campaign.pledgeCount, 10) || 0) + 1;
+    },
+
+    // A project card shows what the whole campus has pledged and received -
+    // every member's promises added together, not just this account's. Only the
+    // server can total that, so after a pledge or a gift we re-pull the project
+    // slice and repaint the card with the new shared figures.
+    refreshCampaignTotals() {
+        if (!this.apiEnabled()) return;
+        this.apiWrite(
+            () => Church2API.campaigns('global'),
+            (rows) => {
+                this.applyHydrateSlice('campaigns', rows);
+                this.renderMobileProjects();
+                const branchSel = document.getElementById('mobile-giving-branch');
+                const branchId = branchSel ? branchSel.value : '';
+                this.renderMobileFinancialSummary(branchId);
+                this.renderMobileLedger(branchId);
+            }
+        );
+    },
+
     // Give directly to a project from its card in the member app - the giver
     // picks the amount and the payment method they want to use.
     supportProject(campaignId) {
@@ -8331,13 +9202,45 @@ const ChurchApp = {
         this.db.transactions.unshift(newTx);
         this.saveDB();
         this.apiWrite(
-            () => Church2API.recordTransaction({ memberId: newTx.memberId, amount, category: newTx.category, paymentMethod: method, date: newTx.date, memberName, branchId: newTx.branchId }),
-            (srv) => { if (srv && srv.id) { newTx.id = srv.id; if (srv.receiptNumber) newTx.receiptNumber = srv.receiptNumber; } }
+            () => Church2API.recordTransaction({ memberId: newTx.memberId, amount, category: newTx.category, paymentMethod: method, date: newTx.date, memberName, branchId: newTx.branchId, campaignId: campaign.id }),
+            (srv) => {
+                if (srv && srv.id) { newTx.id = srv.id; if (srv.receiptNumber) newTx.receiptNumber = srv.receiptNumber; }
+                // This gift moves the project's received total, which is the
+                // campus-wide figure the server owns - so re-pull it.
+                this.refreshCampaignTotals();
+            }
         );
         this.toast('Thank you! ' + window.money(amount) + ' given to ' + campaign.name + ' via ' + method + '. Receipt ' + newTx.receiptNumber + '.');
         this.renderAll();
         this.renderMobileGive();
         this.renderMobileProjects();
+    },
+
+    // "Pledge" on a project card: the member promises an amount to that project.
+    // It joins the project's communal pledge total immediately and becomes the
+    // member's own promise to pay - giving later reduces what they still owe.
+    pledgeToMobileProject(campaignId) {
+        const campaign = (this.db.campaigns || []).find(c => c.id === campaignId);
+        if (!campaign) return;
+        const input = document.getElementById('proj-pledge-' + campaignId);
+        const amount = parseFloat(input ? input.value : '');
+        if (isNaN(amount) || amount <= 0) {
+            this.toast('Enter the amount you are pledging to ' + campaign.name + '.', 'error');
+            return;
+        }
+        const member = this.db.members.find(m => m.id === this.simulatedMemberId());
+        if (!member) { this.toast('Sign in as a member to pledge to a project.', 'error'); return; }
+        const wasNewPledge = this.memberPledgeTo(member, campaign) <= 0;
+        this.addMemberPledge(member, campaign, amount);
+        this.bumpCampaignPledge(campaign, amount, wasNewPledge);
+        if (input) input.value = '';
+        const nowPledged = this.memberPledgeTo(member, campaign);
+        this.toast('Pledged ' + window.money(amount, { decimals: 0 }) + ' to ' + campaign.name
+            + '. Your promise for it is now ' + window.money(nowPledged, { decimals: 0 })
+            + ' - give it under "Give now" whenever you can.');
+        this.renderAll();
+        this.renderMobileProjects();
+        this.renderMobileGive();
     },
 
     async handleMobileGiving() {

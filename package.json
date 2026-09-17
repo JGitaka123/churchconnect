@@ -5,7 +5,13 @@
   "main": "app.js",
   "scripts": {
     "test": "node test.js",
-    "start": "node server/src/index.js"
+    "prestart": "node scripts/free-port.mjs",
+    "start": "node server/src/index.js",
+    "predev": "node scripts/free-port.mjs",
+    "dev": "node --watch server/src/index.js",
+    "prebackend": "node scripts/free-port.mjs",
+    "backend": "node server/src/index.js",
+    "build": "node scripts/build-cf.mjs"
   },
   "keywords": [
     "church",

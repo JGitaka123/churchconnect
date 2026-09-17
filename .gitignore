@@ -26,3 +26,12 @@ package-lock.json.corrupt
 dist/
 # Local node_modules (root npm install)
 node_modules/
+
+# Local diagnostic scratch scripts - debugging only, never part of the app
+server/.diag-*.mjs
+server/.probe-*.mjs
+server/.repro-*.mjs
+server/.verify-*.mjs
+server/.check-*.mjs
+server/.tmp-*.mjs
+.diag-*.ps1

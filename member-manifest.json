@@ -27,10 +27,11 @@
       "purpose": "maskable"
     }
   ],
-  "start_url": "./index.html",
+  "start_url": "./member.html",
+  "scope": "./",
   "background_color": "#0b1220",
   "theme_color": "#0b1220",
   "display": "standalone",
   "orientation": "portrait",
-  "description": "Church Connect is the mobile app for Maximum Miracle Centre members - services, sermons, giving, groups and more. Staff use the web console for ministry management."
+  "description": "Church Connect is the mobile app for Maximum Miracle Centre members - services, sermons, giving, groups, prayer and more. Staff manage everything from the Ministry Console on the web."
 }

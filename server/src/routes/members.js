@@ -19,6 +19,16 @@ router.get('/', wrap(async (req, res) => {
     const p = `$${params.length}`;
     where.push(`(lower(m.first_name || ' ' || m.last_name) LIKE ${p} OR lower(coalesce(m.email,'')) LIKE ${p} OR coalesce(m.phone,'') LIKE ${p})`);
   }
+  // A member-role account is not the church directory. It may only read its own
+  // record (plus anyone linked to the same family), so John's phone never holds
+  // another member's email address, phone number or profile.
+  if (req.user.role === 'member') {
+    const selfId = await findMemberIdForUser(req.user);
+    if (!selfId) return res.json([]);
+    params.push(selfId);
+    const self = `$${params.length}`;
+    where.push(`(m.id = ${self} OR (m.family_id IS NOT NULL AND m.family_id = (SELECT family_id FROM members WHERE id = ${self})))`);
+  }
   const sql = `SELECT m.*, b.name AS branch_name FROM members m JOIN branches b ON b.id = m.branch_id
                ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY m.last_name, m.first_name`;
   const { rows } = await query(sql, params);
@@ -33,6 +43,16 @@ router.get('/:id', wrap(async (req, res) => {
   if (!m) return res.status(404).json({ error: 'Member not found' });
   if (scope && m.branch_id !== scope) return res.status(403).json({ error: 'Out of scope' });
   if (church && m.church_id !== church) return res.status(403).json({ error: 'Out of scope' });
+  // Same isolation rule as the list: a member may open their own profile (or a
+  // family member's), never another person's record.
+  if (req.user.role === 'member') {
+    const selfId = await findMemberIdForUser(req.user);
+    const { rows: own } = selfId
+      ? await query('SELECT family_id FROM members WHERE id=$1', [selfId])
+      : { rows: [] };
+    const sameFamily = Boolean(m.family_id) && Boolean(own[0]) && m.family_id === own[0].family_id;
+    if (m.id !== selfId && !sameFamily) return res.status(403).json({ error: 'Out of scope' });
+  }
   res.json(mapMember(m));
 }));
 
@@ -40,7 +60,7 @@ router.get('/:id', wrap(async (req, res) => {
 router.post('/', requireRole('hq_admin', 'branch_admin'), wrap(async (req, res) => {
   const scope = resolveScope(req);
   const church = resolveChurch(req);
-  const { firstName, lastName, email, phone, volunteer_skills = [], branchId, familyId, familyRole, familyName, familyContactName, familyContactPhone, familyContactEmail, rolePosition, maritalStatus, age, expectations, previousExperience, familyMembers = [], pledgeAmount, pledgePaid } = req.body || {};
+  const { firstName, lastName, email, phone, volunteer_skills = [], branchId, familyId, familyRole, familyName, familyContactName, familyContactPhone, familyContactEmail, rolePosition, maritalStatus, age, expectations, previousExperience, familyMembers = [], pledgeAmount, pledgePaid, pledgeCampaignId, pledges } = req.body || {};
   if (!firstName || !lastName) return res.status(400).json({ error: 'First and last name are required' });
   const mail = email ? String(email).trim() : null;
   if (mail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) {
@@ -59,11 +79,15 @@ router.post('/', requireRole('hq_admin', 'branch_admin'), wrap(async (req, res) 
   if (!targetBranch) return res.status(400).json({ error: 'branchId is required - this church has no branches yet' });
   const resolved = await resolveBranch(targetBranch, church);
   if (resolved.error) return res.status(400).json({ error: resolved.error });
+  const pledgeCamp = await pledgeCampaignFor(pledgeCampaignId, resolved.churchId);
+  if (pledgeCamp.error) return res.status(400).json({ error: pledgeCamp.error });
+  const pledgeList = await normalisePledges(pledges, resolved.churchId);
+  if (pledgeList.error) return res.status(400).json({ error: pledgeList.error });
   const id = genId('m');
   const { rows } = await query(
-    `INSERT INTO members (id,branch_id,church_id,first_name,last_name,email,phone,volunteer_skills,engagement_score,family_id,family_role,family_name,family_contact_name,family_contact_phone,family_contact_email,role_position,marital_status,age,expectations,previous_experience,family_members,pledge_amount,pledge_paid)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,60,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,$21,$22) RETURNING *`,
-    [id, resolved.branchId, resolved.churchId, firstName, lastName, mail, phone || null, Array.isArray(volunteer_skills) ? volunteer_skills : [], familyId || null, familyRole || null, familyName || null, familyContactName || null, familyContactPhone || null, familyContactEmail || null, rolePosition || null, maritalStatus || null, age != null ? Number(age) : null, expectations || null, previousExperience || null, JSON.stringify(Array.isArray(familyMembers) ? familyMembers : []), pledgeAmt, pledgePaidAmt]
+    `INSERT INTO members (id,branch_id,church_id,first_name,last_name,email,phone,volunteer_skills,engagement_score,family_id,family_role,family_name,family_contact_name,family_contact_phone,family_contact_email,role_position,marital_status,age,expectations,previous_experience,family_members,pledge_amount,pledge_paid,pledge_campaign_id,pledges)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,60,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,$21,$22,$23,$24::jsonb) RETURNING *`,
+    [id, resolved.branchId, resolved.churchId, firstName, lastName, mail, phone || null, Array.isArray(volunteer_skills) ? volunteer_skills : [], familyId || null, familyRole || null, familyName || null, familyContactName || null, familyContactPhone || null, familyContactEmail || null, rolePosition || null, maritalStatus || null, age != null ? Number(age) : null, expectations || null, previousExperience || null, JSON.stringify(Array.isArray(familyMembers) ? familyMembers : []), pledgeAmt, pledgePaidAmt, pledgeCamp.value, JSON.stringify(pledgeList.value)]
   );
   const { rows: b } = await query('SELECT name FROM branches WHERE id=$1', [resolved.branchId]);
   res.status(201).json(mapMember({ ...rows[0], branch_name: b[0]?.name }));
@@ -162,6 +186,21 @@ router.patch('/:id', wrap(async (req, res) => {
     }
     push('pledge_paid', pledgePaidAmt);
   }
+  // The project this pledge is for, chosen by the member in the app (or cleared
+  // back to a general pledge with null/empty).
+  if (body.pledgeCampaignId !== undefined) {
+    const camp = await pledgeCampaignFor(body.pledgeCampaignId, member.church_id);
+    if (camp.error) return res.status(400).json({ error: camp.error });
+    push('pledge_campaign_id', camp.value);
+  }
+  // The per-project breakdown of the member's promise(s). A member pledges to
+  // as many projects as they like, one entry each.
+  if (body.pledges !== undefined) {
+    const list = await normalisePledges(body.pledges, member.church_id);
+    if (list.error) return res.status(400).json({ error: list.error });
+    params.push(JSON.stringify(list.value));
+    sets.push(`pledges = $${params.length}::jsonb`);
+  }
 
   if (!sets.length) return res.status(400).json({ error: 'No updatable fields provided' });
   params.push(member.id);
@@ -187,5 +226,44 @@ router.delete('/:id', requireRole('hq_admin', 'branch_admin'), wrap(async (req, 
   await query('DELETE FROM members WHERE id=$1', [req.params.id]);
   res.json({ ok: true, id: req.params.id });
 }));
+
+// A pledge can be tied to one project. The project must exist and belong to the
+// same church as the member, so a pledge can never point at another church's
+// campaign, and a stale project id is refused instead of stored.
+async function pledgeCampaignFor(campaignId, churchId) {
+  const id = campaignId ? String(campaignId).trim() : '';
+  if (!id) return { value: null };
+  const { rows } = await query('SELECT id, church_id FROM campaigns WHERE id=$1', [id]);
+  const camp = rows[0];
+  if (!camp) return { error: 'That project no longer exists - pick another one.' };
+  if (churchId && camp.church_id !== churchId) return { error: 'That project belongs to another church.' };
+  return { value: camp.id };
+}
+
+// A member may pledge to several projects at once, so the promise is stored as
+// a list of {campaignId, amount}. Every project must belong to the same church
+// as the member, no project may appear twice, and at most one entry may be the
+// "general" promise that is not tied to any project.
+async function normalisePledges(list, churchId) {
+  if (!Array.isArray(list)) return { error: 'pledges must be a list of project pledges' };
+  const out = [];
+  const seen = new Set();
+  let general = 0;
+  for (const raw of list) {
+    const amount = Number(raw && raw.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return { error: 'Each pledge needs an amount greater than 0' };
+    const camp = await pledgeCampaignFor(raw && raw.campaignId, churchId);
+    if (camp.error) return { error: camp.error };
+    if (!camp.value) {
+      general = Math.max(general, amount);
+      continue;
+    }
+    if (seen.has(camp.value)) return { error: 'The same project appears twice in the pledge list' };
+    seen.add(camp.value);
+    out.push({ campaignId: camp.value, amount });
+  }
+  if (general > 0) out.push({ campaignId: null, amount: general });
+  return { value: out };
+}
 
 export default router;

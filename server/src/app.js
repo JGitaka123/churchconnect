@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { MemoryStore } from 'express-rate-limit';
 import { config } from './config.js';
 import { pool } from './db/pool.js';
 import { authenticate } from './auth.js';
@@ -38,16 +38,55 @@ app.use(
 
 // Basic rate limiting; stricter on auth.
 //
-// Limiters are created lazily on the first request instead of at module load:
-// express-rate-limit's default MemoryStore starts a setInterval in its
-// constructor, and Cloudflare Workers forbid timers at module (global) scope.
-function lazyRateLimit(options) {
-  let limiter;
-  return (req, res, next) => {
-    limiter = limiter || rateLimit(options);
-    limiter(req, res, next);
-  };
+// The limiters are built once at app initialization, as express-rate-limit
+// requires: building one inside a request handler trips its
+// ERR_ERL_CREATED_IN_REQUEST_HANDLER validation, because a per-request instance
+// would hand every request a fresh counter and never actually limit anything.
+//
+// Its default MemoryStore arms a setInterval to sweep expired keys, and
+// Cloudflare Workers forbid timers at module (global) scope - which is why
+// these used to be built lazily. This store keeps the same per-key semantics
+// (expiry is still enforced on every access) without the sweep timer, so the
+// instances can be created at module load on both Node and Workers.
+class SweepFreeMemoryStore extends MemoryStore {
+  init(options) {
+    this.windowMs = options.windowMs;
+  }
 }
+
+// A 429 has to come back as JSON with a reason. The frontend reads
+// `res.json().error` (js/api.js), so the library's plain-text default ("Too
+// many requests, please try again later.") makes that parse throw and the UI
+// falls back to a bare "Request failed (429)" with no explanation - which is
+// what made a blocked sign-in look dormant. Retry-After is surfaced too so the
+// message can say how long to wait.
+const limitReached = (reason) => (_req, res) => {
+  const retryAfter = Number(res.getHeader('Retry-After')) || null;
+  const minutes = retryAfter ? Math.max(1, Math.ceil(retryAfter / 60)) : null;
+  res.status(429).json({
+    error: reason,
+    retryAfter,
+    ...(minutes ? { detail: `Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.` } : {}),
+  });
+};
+
+// Each limiter needs its own store - express-rate-limit rejects a store shared
+// between limiters (ERR_ERL_UNSHARED_STORE).
+const makeLimiter = (options, reason) => rateLimit({
+  standardHeaders: true,
+  legacyHeaders: false,
+  ...options,
+  store: new SweepFreeMemoryStore(),
+  handler: limitReached(reason),
+});
+const apiLimiter = makeLimiter({ windowMs: 60_000, max: 300 },
+  'Too many requests - please slow down and try again in a moment.');
+const authLimiter = makeLimiter({ windowMs: 15 * 60_000, max: 30 },
+  'Too many sign-in attempts from this network. Please wait a few minutes and try again.');
+// Credential-stuffing throttle: per-IP cap on password attempts, layered on top
+// of the per-account lockout enforced in the login handler itself.
+const loginLimiter = makeLimiter({ windowMs: 15 * 60_000, max: 20 },
+  'Too many sign-in attempts from this network. Please wait a few minutes and try again.');
 
 // Lazy one-time schema guard for the Cloudflare Worker. pages-entry.js injects
 // ensureMigrated() so a fresh/stale Neon DB self-heals on the first request;
@@ -59,11 +98,59 @@ app.use('/api/', async (req, res, next) => {
   try { await schemaGuard(); } catch (e) { console.error('Schema guard failed:', e && e.message); }
   next();
 });
-app.use('/api/', lazyRateLimit({ windowMs: 60_000, max: 300 }));
-const authLimiter = lazyRateLimit({ windowMs: 15 * 60_000, max: 30 });
-// Credential-stuffing throttle: per-IP cap on password attempts, layered on top
-// of the per-account lockout enforced in the login handler itself.
-const loginLimiter = lazyRateLimit({ windowMs: 15 * 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
+app.use('/api/', apiLimiter);
+
+// ---- Live activity log ------------------------------------------------------
+// The server terminal is the only window into what the backend is doing, so
+// every API call prints a line there: who signed in, and the exact reason a
+// request was refused. Passwords are never logged.
+app.use('/api', (req, res, next) => {
+  const startedAt = Date.now();
+  const url = (req.originalUrl || req.url).split('?')[0];
+  const isAuth = url.startsWith('/api/auth/') || url.startsWith('/api/v1/auth/');
+  const email = req.body && typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+
+  const sendJson = res.json.bind(res);
+  res.json = (payload) => {
+    if (payload && typeof payload === 'object') {
+      if (payload.error) {
+        res.locals.apiNote = payload.error;
+      } else {
+        // Announce every stage of a sign-in, tagged by role. An admin's login
+        // finishes on /auth/mfa rather than /auth/login, so the old check on
+        // '/login' alone meant a staff sign-in never named its role here.
+        const stage = /\/(login|mfa|mfa\/verify)$/.test(url);
+        const who = payload.user && payload.user.role ? payload.user : null;
+        const issued = payload.token || payload.access_token;
+        if (stage && who) {
+          const tag = who.role === 'member' ? '[member]' : '[STAFF]';
+          res.locals.apiNote = issued
+            ? tag + ' SIGN-IN COMPLETE - ' + who.name + ' (' + who.role + ')'
+            : (payload.mfaRequired ? tag + ' password accepted - MFA code required (' + who.role + ')' : '');
+        } else if (stage && issued) {
+          // The documented /v1 verify route issues a token without echoing the
+          // user record, so the role is not available to name here.
+          res.locals.apiNote = 'SIGN-IN COMPLETE - second factor verified';
+        }
+      }
+    }
+    return sendJson(payload);
+  };
+
+  res.on('finish', () => {
+    if (url === '/api/health' && res.statusCode < 400) return;
+    const ms = Date.now() - startedAt;
+    const bits = [];
+    if (isAuth && email) bits.push(email);
+    if (res.locals.apiNote) bits.push(res.locals.apiNote);
+    const detail = bits.length ? ' - ' + bits.join(' - ') : '';
+    const line = '[' + new Date().toLocaleTimeString() + '] ' + res.statusCode + ' ' + req.method + ' ' + url + ' ' + ms + 'ms' + detail;
+    if (res.statusCode >= 500) console.error(line);
+    else console.log(line);
+  });
+
+  next();
+});
 
 // Health check (used by Docker/uptime probes).
 app.get('/api/health', async (_req, res) => {
@@ -186,10 +273,13 @@ app.get('/api/youtube/feed', async (req, res) => {
 // without a token - so this mount sits above the global authenticate gate. The
 // stkpush + status routes enforce their own authentication inside the router.
 app.use('/api/mpesa', mpesaRouter);
-app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/v1/auth', authLimiter, v1AuthRouter);
+// The stricter login throttle has to be mounted BEFORE the auth routers: a
+// router that answers the request ends the chain, so an app.use() registered
+// after it would never run (the login limiter used to be unreachable here).
 app.use('/api/auth/login', loginLimiter);
 app.use('/api/v1/auth/login', loginLimiter);
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/v1/auth', authLimiter, v1AuthRouter);
 
 // Everything below requires a valid token
 app.use('/api', authenticate);

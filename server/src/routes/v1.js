@@ -321,6 +321,9 @@ const mapChurch = (r) => ({
   tagline: r.tagline || null, website: r.website || null,
   contactEmail: r.contact_email || null, contactPhone: r.contact_phone || null,
   newsBullet: r.news_bullet || null,
+  youtubeChannel: r.youtube_channel || null,
+  facebookUrl: r.facebook_url || null,
+  tiktokUrl: r.tiktok_url || null,
   createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
 });
 
@@ -336,12 +339,12 @@ v1.get('/churches', wrap(async (req, res) => {
 
 // Provision a brand-new church tenant (platform admins only).
 v1.post('/churches', requireRole('platform_admin'), wrap(async (req, res) => {
-  const { name, shortName, tagline, website, contactEmail, contactPhone, newsBullet } = req.body || {};
+  const { name, shortName, tagline, website, contactEmail, contactPhone, newsBullet, youtubeChannel, facebookUrl, tiktokUrl } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'Church name is required' });
   const id = genId('ch');
   const { rows } = await query(
-    'INSERT INTO churches (id, name, short_name, tagline, website, contact_email, contact_phone, news_bullet) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-    [id, String(name).trim(), shortName ? String(shortName).trim() : null, tagline ? String(tagline).trim() : null, website ? String(website).trim() : null, contactEmail ? String(contactEmail).trim() : null, contactPhone ? String(contactPhone).trim() : null, newsBullet ? String(newsBullet).trim() : null]
+    'INSERT INTO churches (id, name, short_name, tagline, website, contact_email, contact_phone, news_bullet, youtube_channel, facebook_url, tiktok_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
+    [id, String(name).trim(), shortName ? String(shortName).trim() : null, tagline ? String(tagline).trim() : null, website ? String(website).trim() : null, contactEmail ? String(contactEmail).trim() : null, contactPhone ? String(contactPhone).trim() : null, newsBullet ? String(newsBullet).trim() : null, youtubeChannel ? String(youtubeChannel).trim() : null, facebookUrl ? String(facebookUrl).trim() : null, tiktokUrl ? String(tiktokUrl).trim() : null]
   );
   res.status(201).json(mapChurch(rows[0]));
 }));
@@ -369,6 +372,9 @@ v1.patch('/churches/:id', requireRole('hq_admin', 'platform_admin'), wrap(async 
   if (body.contactEmail !== undefined) push('contact_email', body.contactEmail ? String(body.contactEmail).trim() : null);
   if (body.contactPhone !== undefined) push('contact_phone', body.contactPhone ? String(body.contactPhone).trim() : null);
   if (body.newsBullet !== undefined) push('news_bullet', body.newsBullet ? String(body.newsBullet).trim() : null);
+  if (body.youtubeChannel !== undefined) push('youtube_channel', body.youtubeChannel ? String(body.youtubeChannel).trim() : null);
+  if (body.facebookUrl !== undefined) push('facebook_url', body.facebookUrl ? String(body.facebookUrl).trim() : null);
+  if (body.tiktokUrl !== undefined) push('tiktok_url', body.tiktokUrl ? String(body.tiktokUrl).trim() : null);
   if (!sets.length) return res.status(400).json({ error: 'No updatable fields provided' });
   params.push(ch.id);
   const { rows: updated } = await query(`UPDATE churches SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params);

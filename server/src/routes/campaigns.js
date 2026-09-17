@@ -15,7 +15,36 @@ router.get('/', wrap(async (req, res) => {
   if (church) { params.push(church); where.push(`church_id = $${params.length}`); }
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const { rows } = await query(`SELECT * FROM campaigns ${clause} ORDER BY name`, params);
-  res.json(rows.map(mapCampaign));
+  // Progress is an aggregate, so it is computed here: the member app can then
+  // show how far a project has come without being sent anyone else's gifts.
+  const { rows: sums } = await query(
+    `SELECT c.id AS campaign_id, COALESCE(SUM(t.amount), 0) AS raised
+       FROM campaigns c
+       LEFT JOIN transactions t
+         ON (t.campaign_id = c.id
+             OR (t.campaign_id IS NULL AND t.category = c.fund_category AND t.branch_id = c.branch_id))
+      GROUP BY c.id`
+  );
+  const raisedById = new Map(sums.map((s) => [s.campaign_id, Number(s.raised) || 0]));
+  // Promises are counted per project too: a project funded by the whole church
+  // shows how much everybody has pledged and how many members pledged, without
+  // shipping anyone's individual pledge to the app.
+  const { rows: promises } = await query(
+    `SELECT p->>'campaignId' AS campaign_id,
+            COALESCE(SUM((p->>'amount')::numeric), 0) AS pledged,
+            COUNT(*) AS pledgers
+       FROM members m, jsonb_array_elements(m.pledges) p
+      WHERE p->>'campaignId' IS NOT NULL
+      GROUP BY p->>'campaignId'`
+  );
+  const pledgedById = new Map(promises.map((p) => [p.campaign_id, Number(p.pledged) || 0]));
+  const pledgersById = new Map(promises.map((p) => [p.campaign_id, Number(p.pledgers) || 0]));
+  res.json(rows.map((r) => ({
+    ...mapCampaign(r),
+    raised: (Number(r.raised_offset) || 0) + (raisedById.get(r.id) || 0),
+    pledged: pledgedById.get(r.id) || 0,
+    pledgeCount: pledgersById.get(r.id) || 0,
+  })));
 }));
 
 // Create a project/campaign. Church admins; defaults to their campus when no

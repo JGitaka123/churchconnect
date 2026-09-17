@@ -5,10 +5,12 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
+    "prestart": "node ../scripts/free-port.mjs",
     "start": "node src/index.js",
     "migrate": "node src/db/migrate.js",
     "reset-admin": "node src/db/reset-admin.js",
     "seed": "node src/db/seed.js",
+    "predev": "node ../scripts/free-port.mjs",
     "dev": "node --watch src/index.js"
   },
   "engines": {

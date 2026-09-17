@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- Church Connect member app (member.html) -- DO NOT EDIT BY HAND. Generated from index.html so the member app and the admin console stay in sync. Regenerate with scripts/build-cf.mjs or by re-running the generator step. --><!DOCTYPE html>
 <html lang="en">
 <head>
     <!-- Old GitHub Pages copy has no backend - send visitors to the real site -->
@@ -12,7 +12,7 @@
     <title>Church Connect</title>
     
     <!-- PWA configuration and mobile styling -->
-    <link rel="manifest" href="manifest.json?v=6">
+    <link rel="manifest" href="member-manifest.json?v=1">
     <link rel="icon" href="icons/favicon-32.png?v=5" type="image/png">
     <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=5">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -35,7 +35,7 @@
     <!-- Chart.js (vendored locally so analytics render offline, no CDN dependency) -->
     <script src="vendor/chart.umd.js?v=5" defer></script>
 </head>
-<body>
+<body data-app="member">
 
     <!-- Authentication gate (login + MFA). Populated and toggled by app.js. -->
     <div id="auth-screen" class="auth-screen" style="display:none;"></div>
